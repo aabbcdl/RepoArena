@@ -1,5 +1,5 @@
 {
-  "name": "@repoarena/runner",
+  "name": "@repoarena/judges",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -8,11 +8,7 @@
     "dist"
   ],
   "dependencies": {
-    "@repoarena/adapters": "workspace:*",
-    "@repoarena/core": "workspace:*",
-    "@repoarena/judges": "workspace:*",
-    "@repoarena/taskpacks": "workspace:*",
-    "@repoarena/trace": "workspace:*"
+    "@repoarena/core": "workspace:*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

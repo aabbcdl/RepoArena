@@ -40,6 +40,12 @@ importers:
 
   packages/core: {}
 
+  packages/judges:
+    dependencies:
+      '@repoarena/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/report:
     dependencies:
       '@repoarena/core':
@@ -54,6 +60,9 @@ importers:
       '@repoarena/core':
         specifier: workspace:*
         version: link:../core
+      '@repoarena/judges':
+        specifier: workspace:*
+        version: link:../judges
       '@repoarena/taskpacks':
         specifier: workspace:*
         version: link:../taskpacks
