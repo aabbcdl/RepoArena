@@ -25,6 +25,10 @@ export interface BenchmarkOptions {
   outputPath?: string;
 }
 
+function formatErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 async function runCommand(label: string, command: string, cwd: string): Promise<JudgeResult> {
   const startedAt = Date.now();
 
@@ -141,61 +145,115 @@ async function runAgent(
   const beforeSnapshot = await snapshotDirectory(workspacePath);
   const startedAt = Date.now();
 
-  const adapterResult = await adapter.execute({
-    agentId: preflight.agentId,
-    repoPath,
-    workspacePath,
-    task,
-    trace: async (event) => {
+  try {
+    const adapterResult = await adapter.execute({
+      agentId: preflight.agentId,
+      repoPath,
+      workspacePath,
+      task,
+      trace: async (event) => {
+        await traceRecorder.record({
+          ...event,
+          agentId: preflight.agentId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    const judgeResults = await Promise.all(
+      task.successCommands.map((command) => runCommand(command.label, command.command, workspacePath))
+    );
+
+    const afterSnapshot = await snapshotDirectory(workspacePath);
+    const diff = diffSnapshots(beforeSnapshot, afterSnapshot);
+    const durationMs = Date.now() - startedAt;
+    const success = adapterResult.status === "success" && judgeResults.every((value) => value.success);
+
+    await traceRecorder.record({
+      agentId: preflight.agentId,
+      timestamp: new Date().toISOString(),
+      type: "judge.finish",
+      message: success ? "All judges passed" : "One or more judges failed",
+      metadata: {
+        judgeResults: judgeResults.map((value) => ({
+          label: value.label,
+          success: value.success,
+          exitCode: value.exitCode
+        }))
+      }
+    });
+
+    return {
+      agentId: preflight.agentId,
+      agentTitle: adapter.title,
+      adapterKind: adapter.kind,
+      preflight,
+      status: success ? "success" : "failed",
+      summary: adapterResult.summary,
+      durationMs,
+      tokenUsage: adapterResult.tokenUsage,
+      estimatedCostUsd: adapterResult.estimatedCostUsd,
+      costKnown: adapterResult.costKnown,
+      changedFiles: buildChangedFiles(diff, adapterResult.changedFilesHint),
+      changedFilesHint: adapterResult.changedFilesHint,
+      judgeResults,
+      tracePath,
+      workspacePath,
+      diff
+    };
+  } catch (error) {
+    const errorMessage = formatErrorMessage(error);
+    const durationMs = Date.now() - startedAt;
+    let diff: DiffSummary = {
+      added: [],
+      changed: [],
+      removed: []
+    };
+
+    try {
+      const afterSnapshot = await snapshotDirectory(workspacePath);
+      diff = diffSnapshots(beforeSnapshot, afterSnapshot);
+    } catch (snapshotError) {
       await traceRecorder.record({
-        ...event,
         agentId: preflight.agentId,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        type: "agent.snapshot_failed",
+        message: "Failed to snapshot workspace after adapter error.",
+        metadata: {
+          error: formatErrorMessage(snapshotError)
+        }
       });
     }
-  });
 
-  const judgeResults = await Promise.all(
-    task.successCommands.map((command) => runCommand(command.label, command.command, workspacePath))
-  );
+    await traceRecorder.record({
+      agentId: preflight.agentId,
+      timestamp: new Date().toISOString(),
+      type: "agent.crash",
+      message: `${adapter.title} crashed during execution.`,
+      metadata: {
+        error: errorMessage
+      }
+    });
 
-  const afterSnapshot = await snapshotDirectory(workspacePath);
-  const diff = diffSnapshots(beforeSnapshot, afterSnapshot);
-  const durationMs = Date.now() - startedAt;
-  const success = adapterResult.status === "success" && judgeResults.every((value) => value.success);
-
-  await traceRecorder.record({
-    agentId: preflight.agentId,
-    timestamp: new Date().toISOString(),
-    type: "judge.finish",
-    message: success ? "All judges passed" : "One or more judges failed",
-    metadata: {
-      judgeResults: judgeResults.map((value) => ({
-        label: value.label,
-        success: value.success,
-        exitCode: value.exitCode
-      }))
-    }
-  });
-
-  return {
-    agentId: preflight.agentId,
-    agentTitle: adapter.title,
-    adapterKind: adapter.kind,
-    preflight,
-    status: success ? "success" : "failed",
-    summary: adapterResult.summary,
-    durationMs,
-    tokenUsage: adapterResult.tokenUsage,
-    estimatedCostUsd: adapterResult.estimatedCostUsd,
-    costKnown: adapterResult.costKnown,
-    changedFiles: buildChangedFiles(diff, adapterResult.changedFilesHint),
-    changedFilesHint: adapterResult.changedFilesHint,
-    judgeResults,
-    tracePath,
-    workspacePath,
-    diff
-  };
+    return {
+      agentId: preflight.agentId,
+      agentTitle: adapter.title,
+      adapterKind: adapter.kind,
+      preflight,
+      status: "failed",
+      summary: `${adapter.title} crashed: ${errorMessage}`,
+      durationMs,
+      tokenUsage: 0,
+      estimatedCostUsd: 0,
+      costKnown: false,
+      changedFiles: buildChangedFiles(diff, []),
+      changedFilesHint: [],
+      judgeResults: [],
+      tracePath,
+      workspacePath,
+      diff
+    };
+  }
 }
 
 export async function runBenchmark(options: BenchmarkOptions): Promise<BenchmarkRun> {
