@@ -40,6 +40,8 @@ test("loadTaskPack parses schema v1 judges", async () => {
   assert.equal(taskPack.judges[0].id, "lint");
   assert.equal(taskPack.judges[0].cwd, "app");
   assert.equal(taskPack.judges[0].timeoutMs, 15000);
+  assert.deepEqual(taskPack.setupCommands, []);
+  assert.deepEqual(taskPack.teardownCommands, []);
 
   await rm(tempDir, { recursive: true, force: true });
 });
@@ -74,6 +76,52 @@ test("loadTaskPack keeps backward compatibility with successCommands", async () 
   assert.equal(taskPack.judges[0].id, "legacy-1");
   assert.equal(taskPack.judges[0].type, "command");
   assert.equal(taskPack.judges[0].label, "README exists");
+  assert.deepEqual(taskPack.setupCommands, []);
+  assert.deepEqual(taskPack.teardownCommands, []);
+
+  await rm(tempDir, { recursive: true, force: true });
+});
+
+test("loadTaskPack parses setup and teardown commands", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "repoarena-taskpack-"));
+  const taskPath = path.join(tempDir, "task.json");
+
+  await writeFile(
+    taskPath,
+    JSON.stringify(
+      {
+        schemaVersion: "repoarena.taskpack/v1",
+        id: "with-hooks",
+        title: "Hooked Task",
+        prompt: "Run setup and teardown",
+        setupCommands: [
+          {
+            label: "Prepare fixtures",
+            command: "node prepare.js",
+            cwd: "scripts"
+          }
+        ],
+        judges: [],
+        teardownCommands: [
+          {
+            label: "Clean temp files",
+            command: "node cleanup.js",
+            timeoutMs: 5000
+          }
+        ]
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const taskPack = await loadTaskPack(taskPath);
+
+  assert.equal(taskPack.setupCommands[0].id, "with-hooks-setup-1");
+  assert.equal(taskPack.setupCommands[0].cwd, "scripts");
+  assert.equal(taskPack.teardownCommands[0].id, "with-hooks-teardown-1");
+  assert.equal(taskPack.teardownCommands[0].timeoutMs, 5000);
 
   await rm(tempDir, { recursive: true, force: true });
 });

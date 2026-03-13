@@ -5,6 +5,7 @@ import {
   AdapterPreflightResult,
   AgentRunResult,
   BenchmarkRun,
+  CommandStepResult,
   DiffSummary,
   copyRepository,
   createRunId,
@@ -13,7 +14,7 @@ import {
   snapshotDirectory,
   uniqueSorted
 } from "@repoarena/core";
-import { runJudges } from "@repoarena/judges";
+import { runCommandSteps, runJudges } from "@repoarena/judges";
 import { loadTaskPack } from "@repoarena/taskpacks";
 import { JsonlTraceRecorder } from "@repoarena/trace";
 
@@ -71,6 +72,10 @@ function buildChangedFiles(diff: DiffSummary, hints: string[]): string[] {
   return uniqueSorted([...diff.added, ...diff.changed, ...diff.removed, ...hints]);
 }
 
+function summarizeCommandStepFailure(stage: "setup" | "teardown", result: CommandStepResult): string {
+  return `${stage} command "${result.label}" failed with exit code ${result.exitCode}.`;
+}
+
 function createSkippedRunResult(
   preflight: AdapterPreflightResult,
   tracePath: string,
@@ -89,7 +94,9 @@ function createSkippedRunResult(
     costKnown: false,
     changedFiles: [],
     changedFilesHint: [],
+    setupResults: [],
     judgeResults: [],
+    teardownResults: [],
     tracePath,
     workspacePath,
     diff: {
@@ -154,6 +161,57 @@ async function runAgent(
     }
   });
 
+  const setupResults = await runCommandSteps(task.setupCommands, workspacePath);
+  await traceRecorder.record({
+    agentId: preflight.agentId,
+    timestamp: new Date().toISOString(),
+    type: "setup.finish",
+    message:
+      setupResults.length === 0
+        ? "No setup commands executed."
+        : setupResults.every((value) => value.success)
+          ? "All setup commands passed."
+          : "One or more setup commands failed.",
+    metadata: {
+      setupResults: setupResults.map((value) => ({
+        stepId: value.stepId,
+        label: value.label,
+        success: value.success,
+        exitCode: value.exitCode
+      }))
+    }
+  });
+
+  if (setupResults.some((value) => !value.success)) {
+    return {
+      agentId: preflight.agentId,
+      agentTitle: adapter.title,
+      adapterKind: adapter.kind,
+      preflight,
+      status: "failed",
+      summary: summarizeCommandStepFailure(
+        "setup",
+        setupResults.find((value) => !value.success) ?? setupResults[0]
+      ),
+      durationMs: 0,
+      tokenUsage: 0,
+      estimatedCostUsd: 0,
+      costKnown: false,
+      changedFiles: [],
+      changedFilesHint: [],
+      setupResults,
+      judgeResults: [],
+      teardownResults: [],
+      tracePath,
+      workspacePath,
+      diff: {
+        added: [],
+        changed: [],
+        removed: []
+      }
+    };
+  }
+
   const beforeSnapshot = await snapshotDirectory(workspacePath);
   const startedAt = Date.now();
 
@@ -176,8 +234,12 @@ async function runAgent(
 
     const afterSnapshot = await snapshotDirectory(workspacePath);
     const diff = diffSnapshots(beforeSnapshot, afterSnapshot);
+    const teardownResults = await runCommandSteps(task.teardownCommands, workspacePath);
     const durationMs = Date.now() - startedAt;
-    const success = adapterResult.status === "success" && judgeResults.every((value) => value.success);
+    const success =
+      adapterResult.status === "success" &&
+      judgeResults.every((value) => value.success) &&
+      teardownResults.every((value) => value.success);
 
     await traceRecorder.record({
       agentId: preflight.agentId,
@@ -186,6 +248,25 @@ async function runAgent(
       message: success ? "All judges passed" : "One or more judges failed",
       metadata: {
         judgeResults: judgeResults.map((value) => ({
+          label: value.label,
+          success: value.success,
+          exitCode: value.exitCode
+        }))
+      }
+    });
+    await traceRecorder.record({
+      agentId: preflight.agentId,
+      timestamp: new Date().toISOString(),
+      type: "teardown.finish",
+      message:
+        teardownResults.length === 0
+          ? "No teardown commands executed."
+          : teardownResults.every((value) => value.success)
+            ? "All teardown commands passed."
+            : "One or more teardown commands failed.",
+      metadata: {
+        teardownResults: teardownResults.map((value) => ({
+          stepId: value.stepId,
           label: value.label,
           success: value.success,
           exitCode: value.exitCode
@@ -206,7 +287,9 @@ async function runAgent(
       costKnown: adapterResult.costKnown,
       changedFiles: buildChangedFiles(diff, adapterResult.changedFilesHint),
       changedFilesHint: adapterResult.changedFilesHint,
+      setupResults,
       judgeResults,
+      teardownResults,
       tracePath,
       workspacePath,
       diff
@@ -258,7 +341,9 @@ async function runAgent(
       costKnown: false,
       changedFiles: buildChangedFiles(diff, []),
       changedFilesHint: [],
+      setupResults,
       judgeResults: [],
+      teardownResults: [],
       tracePath,
       workspacePath,
       diff

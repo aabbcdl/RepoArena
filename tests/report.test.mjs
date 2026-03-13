@@ -19,7 +19,9 @@ test("writeReport sanitizes shareable output paths", async () => {
       id: "demo",
       title: "Demo",
       prompt: "Prompt",
-      judges: []
+      setupCommands: [],
+      judges: [],
+      teardownCommands: []
     },
     preflights: [
       {
@@ -52,6 +54,7 @@ test("writeReport sanitizes shareable output paths", async () => {
         costKnown: true,
         changedFiles: ["repoarena-demo/demo-fast.md"],
         changedFilesHint: ["repoarena-demo/demo-fast.md"],
+        setupResults: [],
         judgeResults: [
           {
             judgeId: "lint",
@@ -66,6 +69,7 @@ test("writeReport sanitizes shareable output paths", async () => {
             cwd: "C:\\temp\\workspace\\demo-fast"
           }
         ],
+        teardownResults: [],
         tracePath: path.join(outputPath, "agents", "demo-fast", "trace.jsonl"),
         workspacePath: "C:\\temp\\workspace\\demo-fast",
         diff: {

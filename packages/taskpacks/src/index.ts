@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { CommandJudge, TASK_PACK_SCHEMA_V1, TaskPack } from "@repoarena/core";
+import { CommandExecutionSpec, CommandJudge, TASK_PACK_SCHEMA_V1, TaskPack } from "@repoarena/core";
 
 function assertString(value: unknown, label: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
@@ -52,6 +52,23 @@ function normalizeJudge(
   };
 }
 
+function normalizeCommandSpec(
+  value: Record<string, unknown>,
+  index: number,
+  fieldName: "setupCommands" | "teardownCommands",
+  defaultIdPrefix: string
+): CommandExecutionSpec {
+  return {
+    id:
+      assertOptionalString(value.id, `${fieldName}[${index}].id`) ??
+      `${defaultIdPrefix}-${index + 1}`,
+    label: assertString(value.label, `${fieldName}[${index}].label`),
+    command: assertString(value.command, `${fieldName}[${index}].command`),
+    cwd: assertOptionalString(value.cwd, `${fieldName}[${index}].cwd`),
+    timeoutMs: assertOptionalPositiveInteger(value.timeoutMs, `${fieldName}[${index}].timeoutMs`)
+  };
+}
+
 export async function loadTaskPack(taskPath: string): Promise<TaskPack> {
   const resolvedPath = path.resolve(taskPath);
   const extension = path.extname(resolvedPath).toLowerCase();
@@ -77,6 +94,8 @@ export async function loadTaskPack(taskPath: string): Promise<TaskPack> {
     : Array.isArray(parsed.successCommands)
       ? parsed.successCommands
       : [];
+  const setupCommandsInput = Array.isArray(parsed.setupCommands) ? parsed.setupCommands : [];
+  const teardownCommandsInput = Array.isArray(parsed.teardownCommands) ? parsed.teardownCommands : [];
 
   return {
     schemaVersion: TASK_PACK_SCHEMA_V1,
@@ -84,12 +103,31 @@ export async function loadTaskPack(taskPath: string): Promise<TaskPack> {
     title: assertString(parsed.title, "title"),
     description: typeof parsed.description === "string" ? parsed.description : undefined,
     prompt: assertString(parsed.prompt, "prompt"),
+    setupCommands: setupCommandsInput.map((value, index) => {
+      if (!value || typeof value !== "object") {
+        throw new Error(`Task pack setup command at index ${index} must be an object.`);
+      }
+
+      return normalizeCommandSpec(value as Record<string, unknown>, index, "setupCommands", `${taskId}-setup`);
+    }),
     judges: judgesInput.map((value, index) => {
       if (!value || typeof value !== "object") {
         throw new Error(`Task pack judge at index ${index} must be an object.`);
       }
 
       return normalizeJudge(value as Record<string, unknown>, index, taskId);
+    }),
+    teardownCommands: teardownCommandsInput.map((value, index) => {
+      if (!value || typeof value !== "object") {
+        throw new Error(`Task pack teardown command at index ${index} must be an object.`);
+      }
+
+      return normalizeCommandSpec(
+        value as Record<string, unknown>,
+        index,
+        "teardownCommands",
+        `${taskId}-teardown`
+      );
     })
   };
 }

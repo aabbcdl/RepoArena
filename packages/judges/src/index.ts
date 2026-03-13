@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
-import { CommandJudge, JudgeResult } from "@repoarena/core";
+import { CommandExecutionSpec, CommandStepResult, CommandJudge, JudgeResult } from "@repoarena/core";
 
 const DEFAULT_JUDGE_TIMEOUT_MS = 5 * 60 * 1_000;
 
@@ -18,6 +18,16 @@ function resolveJudgeWorkingDirectory(workspacePath: string, judge: CommandJudge
   const relativePath = path.relative(workspacePath, candidatePath);
   if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
     throw new Error(`Judge "${judge.id}" cwd must stay inside the workspace.`);
+  }
+
+  return candidatePath;
+}
+
+function resolveCommandWorkingDirectory(workspacePath: string, step: CommandExecutionSpec): string {
+  const candidatePath = step.cwd ? path.resolve(workspacePath, step.cwd) : workspacePath;
+  const relativePath = path.relative(workspacePath, candidatePath);
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    throw new Error(`Command step "${step.id}" cwd must stay inside the workspace.`);
   }
 
   return candidatePath;
@@ -87,4 +97,74 @@ export async function runJudge(judge: CommandJudge, workspacePath: string): Prom
 
 export async function runJudges(judges: CommandJudge[], workspacePath: string): Promise<JudgeResult[]> {
   return await Promise.all(judges.map(async (judge) => await runJudge(judge, workspacePath)));
+}
+
+export async function runCommandStep(
+  step: CommandExecutionSpec,
+  workspacePath: string
+): Promise<CommandStepResult> {
+  const startedAt = Date.now();
+  const timeoutMs = step.timeoutMs ?? defaultJudgeTimeoutMs();
+  const cwd = resolveCommandWorkingDirectory(workspacePath, step);
+
+  return await new Promise((resolve) => {
+    const child = spawn(step.command, {
+      cwd,
+      shell: true,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    const timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, timeoutMs);
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("close", (exitCode) => {
+      clearTimeout(timeoutHandle);
+      resolve({
+        stepId: step.id,
+        label: step.label,
+        command: step.command,
+        exitCode,
+        success: exitCode === 0 && !timedOut,
+        stdout: stdout.trim(),
+        stderr: `${stderr}${timedOut ? `\nCommand step timed out after ${timeoutMs}ms.` : ""}`.trim(),
+        durationMs: Date.now() - startedAt,
+        cwd
+      });
+    });
+
+    child.on("error", (error) => {
+      clearTimeout(timeoutHandle);
+      resolve({
+        stepId: step.id,
+        label: step.label,
+        command: step.command,
+        exitCode: -1,
+        success: false,
+        stdout,
+        stderr: `${stderr}\n${error.message}`.trim(),
+        durationMs: Date.now() - startedAt,
+        cwd
+      });
+    });
+  });
+}
+
+export async function runCommandSteps(
+  steps: CommandExecutionSpec[],
+  workspacePath: string
+): Promise<CommandStepResult[]> {
+  return await Promise.all(steps.map(async (step) => await runCommandStep(step, workspacePath)));
 }

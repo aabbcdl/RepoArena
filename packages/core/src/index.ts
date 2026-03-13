@@ -4,13 +4,16 @@ import path from "node:path";
 
 export const TASK_PACK_SCHEMA_V1 = "repoarena.taskpack/v1";
 
-export interface CommandJudge {
+export interface CommandExecutionSpec {
   id: string;
   label: string;
-  type: "command";
   command: string;
   cwd?: string;
   timeoutMs?: number;
+}
+
+export interface CommandJudge extends CommandExecutionSpec {
+  type: "command";
 }
 
 export interface TaskPack {
@@ -19,7 +22,9 @@ export interface TaskPack {
   title: string;
   description?: string;
   prompt: string;
+  setupCommands: CommandExecutionSpec[];
   judges: CommandJudge[];
+  teardownCommands: CommandExecutionSpec[];
 }
 
 export interface TraceEvent {
@@ -84,6 +89,18 @@ export interface JudgeResult {
   cwd: string;
 }
 
+export interface CommandStepResult {
+  stepId: string;
+  label: string;
+  command: string;
+  exitCode: number | null;
+  success: boolean;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+  cwd: string;
+}
+
 export interface DiffSummary {
   added: string[];
   changed: string[];
@@ -103,7 +120,9 @@ export interface AgentRunResult {
   costKnown: boolean;
   changedFiles: string[];
   changedFilesHint: string[];
+  setupResults: CommandStepResult[];
   judgeResults: JudgeResult[];
+  teardownResults: CommandStepResult[];
   tracePath: string;
   workspacePath: string;
   diff: DiffSummary;

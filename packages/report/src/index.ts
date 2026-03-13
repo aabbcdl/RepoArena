@@ -65,14 +65,60 @@ function sanitizeRun(run: BenchmarkRun): BenchmarkRun {
         ...result.preflight,
         command: undefined
       },
+      setupResults: result.setupResults.map((step) => ({
+        ...step,
+        cwd: sanitizeWorkspaceScopedPath(step.cwd, result.workspacePath, result.agentId)
+      })),
       judgeResults: result.judgeResults.map((judge) => ({
         ...judge,
         cwd: sanitizeWorkspaceScopedPath(judge.cwd, result.workspacePath, result.agentId)
+      })),
+      teardownResults: result.teardownResults.map((step) => ({
+        ...step,
+        cwd: sanitizeWorkspaceScopedPath(step.cwd, result.workspacePath, result.agentId)
       })),
       tracePath: sanitizePath(result.tracePath, run.outputPath, "run"),
       workspacePath: `workspace/${path.basename(result.workspacePath)}`
     }))
   };
+}
+
+function renderCommandStepList(
+  title: string,
+  steps: Array<{
+    label: string;
+    success: boolean;
+    durationMs: number;
+    stdout: string;
+    stderr: string;
+    cwd: string;
+  }>
+): string {
+  const items =
+    steps.length === 0
+      ? "<li>No commands executed.</li>"
+      : steps
+          .map(
+            (step) =>
+              `<li><strong>${escapeHtml(step.label)}</strong>: ${
+                step.success ? "pass" : "fail"
+              } (${escapeHtml(formatDuration(step.durationMs))})${
+                step.stdout || step.stderr
+                  ? `<details><summary>Debug output</summary>${
+                      step.stdout
+                        ? `<p class="meta"><strong>stdout</strong></p><pre>${escapeHtml(step.stdout)}</pre>`
+                        : ""
+                    }${
+                      step.stderr
+                        ? `<p class="meta"><strong>stderr</strong></p><pre>${escapeHtml(step.stderr)}</pre>`
+                        : ""
+                    }<p class="meta">cwd: ${escapeHtml(step.cwd)}</p></details>`
+                  : ""
+              }</li>`
+          )
+          .join("");
+
+  return `<h3>${escapeHtml(title)}</h3><ul>${items}</ul>`;
 }
 
 function renderPreflights(run: BenchmarkRun): string {
@@ -101,30 +147,6 @@ function renderPreflights(run: BenchmarkRun): string {
 function renderAgentCards(run: BenchmarkRun): string {
   return run.results
     .map((result) => {
-      const judgeItems =
-        result.judgeResults.length === 0
-          ? "<li>No success commands executed.</li>"
-          : result.judgeResults
-              .map(
-                (judge) =>
-                  `<li><strong>${escapeHtml(judge.label)}</strong>: ${
-                    judge.success ? "pass" : "fail"
-                  } (${escapeHtml(formatDuration(judge.durationMs))})${
-                    judge.stdout || judge.stderr
-                      ? `<details><summary>Debug output</summary>${
-                          judge.stdout
-                            ? `<p class="meta"><strong>stdout</strong></p><pre>${escapeHtml(judge.stdout)}</pre>`
-                            : ""
-                        }${
-                          judge.stderr
-                            ? `<p class="meta"><strong>stderr</strong></p><pre>${escapeHtml(judge.stderr)}</pre>`
-                            : ""
-                        }<p class="meta">cwd: ${escapeHtml(judge.cwd)}</p></details>`
-                      : ""
-                  }</li>`
-              )
-              .join("");
-
       const changedFiles = result.changedFiles;
       const addedFiles =
         result.diff.added.length === 0
@@ -154,8 +176,9 @@ function renderAgentCards(run: BenchmarkRun): string {
               result.costKnown ? `$${result.estimatedCostUsd.toFixed(2)}` : "n/a"
             }</span></div>
           </div>
-          <h3>Judges</h3>
-          <ul>${judgeItems}</ul>
+          ${renderCommandStepList("Setup", result.setupResults)}
+          ${renderCommandStepList("Judges", result.judgeResults)}
+          ${renderCommandStepList("Teardown", result.teardownResults)}
           <h3>Changed Files</h3>
           <ul>${
             changedFiles.length === 0
