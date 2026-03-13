@@ -18,11 +18,12 @@ function printHelp(): void {
   console.log(`RepoArena CLI
 
 Usage:
-  repoarena run --repo <path> --task <task.json> --agents <comma,separated>
+  repoarena run --repo <path> --task <task.json> --agents <comma,separated> [--probe-auth]
   repoarena doctor [--agents <comma,separated>] [--probe-auth]
 
 Examples:
   repoarena run --repo . --task examples/taskpacks/demo-repo-health.json --agents demo-fast,demo-thorough
+  repoarena run --repo . --task examples/taskpacks/demo-repo-health.json --agents codex,claude-code --probe-auth
   repoarena doctor --agents codex,claude-code,cursor --probe-auth
 `);
 }
@@ -110,7 +111,8 @@ async function runBenchmarkCommand(parsed: ParsedArgs): Promise<void> {
     repoPath: parsed.repoPath,
     taskPath: parsed.taskPath,
     agentIds: parsed.agentIds,
-    outputPath: parsed.outputPath ? path.resolve(parsed.outputPath) : undefined
+    outputPath: parsed.outputPath ? path.resolve(parsed.outputPath) : undefined,
+    probeAuth: parsed.probeAuth
   });
 
   const report = await writeReport(benchmark);

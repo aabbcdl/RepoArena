@@ -23,6 +23,7 @@ export interface BenchmarkOptions {
   taskPath: string;
   agentIds: string[];
   outputPath?: string;
+  probeAuth?: boolean;
 }
 
 function formatErrorMessage(error: unknown): string {
@@ -266,7 +267,7 @@ export async function runBenchmark(options: BenchmarkOptions): Promise<Benchmark
   await ensureDirectory(outputPath);
   await ensureDirectory(workspaceRootPath);
 
-  const preflights = await preflightAdapters(options.agentIds, { probeAuth: false });
+  const preflights = await preflightAdapters(options.agentIds, { probeAuth: options.probeAuth });
   const results: AgentRunResult[] = [];
   for (const preflight of preflights) {
     results.push(await runAgent(repoPath, outputPath, workspaceRootPath, options.taskPath, preflight));
