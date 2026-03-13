@@ -153,6 +153,10 @@ async function runBenchmarkCommand(parsed: ParsedArgs): Promise<void> {
 
   console.log(`\nJSON summary: ${report.jsonPath}`);
   console.log(`HTML report:  ${report.htmlPath}`);
+
+  if (benchmark.results.some((result) => result.status !== "success")) {
+    process.exitCode = 1;
+  }
 }
 
 async function main(): Promise<void> {
