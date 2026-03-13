@@ -159,15 +159,36 @@ async function runAgent(
   const agentOutputPath = path.join(outputPath, "agents", preflight.agentId);
   const workspacePath = path.join(workspaceRootPath, preflight.agentId);
   const tracePath = path.join(agentOutputPath, "trace.jsonl");
+  const traceRecorder = new JsonlTraceRecorder(tracePath);
 
   if (preflight.status === "missing" || preflight.status === "blocked") {
+    await ensureDirectory(agentOutputPath);
+    await traceRecorder.record({
+      agentId: preflight.agentId,
+      timestamp: new Date().toISOString(),
+      type: "preflight.result",
+      message: preflight.summary,
+      metadata: {
+        status: preflight.status,
+        command: preflight.command,
+        details: preflight.details
+      }
+    });
+    await traceRecorder.record({
+      agentId: preflight.agentId,
+      timestamp: new Date().toISOString(),
+      type: "agent.skipped",
+      message: `Skipped ${preflight.agentId} because preflight status is ${preflight.status}.`,
+      metadata: {
+        status: preflight.status
+      }
+    });
     return createSkippedRunResult(preflight, tracePath, workspacePath);
   }
 
   await ensureDirectory(agentOutputPath);
   await copyRepository(repoPath, workspacePath);
 
-  const traceRecorder = new JsonlTraceRecorder(tracePath);
   await traceRecorder.record({
     agentId: preflight.agentId,
     timestamp: new Date().toISOString(),
