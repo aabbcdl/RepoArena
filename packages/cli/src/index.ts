@@ -12,13 +12,14 @@ interface ParsedArgs {
   agentIds: string[];
   outputPath?: string;
   probeAuth: boolean;
+  maxConcurrency?: number;
 }
 
 function printHelp(): void {
   console.log(`RepoArena CLI
 
 Usage:
-  repoarena run --repo <path> --task <task.json> --agents <comma,separated> [--probe-auth]
+  repoarena run --repo <path> --task <task.json> --agents <comma,separated> [--probe-auth] [--max-concurrency <n>]
   repoarena doctor [--agents <comma,separated>] [--probe-auth]
 
 Examples:
@@ -63,6 +64,15 @@ function parseArgs(argv: string[]): ParsedArgs {
       case "--probe-auth":
         parsed.probeAuth = true;
         break;
+      case "--max-concurrency": {
+        const value = Number.parseInt(args.shift() ?? "", 10);
+        if (!Number.isInteger(value) || value <= 0) {
+          throw new Error("--max-concurrency must be a positive integer.");
+        }
+
+        parsed.maxConcurrency = value;
+        break;
+      }
       case "--help":
       case "-h":
         printHelp();
@@ -112,7 +122,8 @@ async function runBenchmarkCommand(parsed: ParsedArgs): Promise<void> {
     taskPath: parsed.taskPath,
     agentIds: parsed.agentIds,
     outputPath: parsed.outputPath ? path.resolve(parsed.outputPath) : undefined,
-    probeAuth: parsed.probeAuth
+    probeAuth: parsed.probeAuth,
+    maxConcurrency: parsed.maxConcurrency
   });
 
   const report = await writeReport(benchmark);

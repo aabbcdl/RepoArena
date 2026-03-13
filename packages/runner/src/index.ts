@@ -25,9 +25,11 @@ export interface BenchmarkOptions {
   agentIds: string[];
   outputPath?: string;
   probeAuth?: boolean;
+  maxConcurrency?: number;
 }
 
 const DEFAULT_JUDGE_TIMEOUT_MS = 5 * 60 * 1_000;
+const DEFAULT_AGENT_CONCURRENCY = 1;
 
 function formatErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -40,6 +42,36 @@ function resolveTimeoutMs(value: string | undefined, fallbackMs: number): number
 
 function judgeTimeoutMs(): number {
   return resolveTimeoutMs(process.env.REPOARENA_JUDGE_TIMEOUT_MS, DEFAULT_JUDGE_TIMEOUT_MS);
+}
+
+function agentConcurrency(options: BenchmarkOptions): number {
+  return options.maxConcurrency ?? resolveTimeoutMs(process.env.REPOARENA_MAX_CONCURRENCY, DEFAULT_AGENT_CONCURRENCY);
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  mapper: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const safeLimit = Math.max(1, limit);
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(safeLimit, items.length) }, async () => {
+      await worker();
+    })
+  );
+
+  return results;
 }
 
 function resolveJudgeWorkingDirectory(workspacePath: string, judge: CommandJudge): string {
@@ -326,10 +358,11 @@ export async function runBenchmark(options: BenchmarkOptions): Promise<Benchmark
   await ensureDirectory(workspaceRootPath);
 
   const preflights = await preflightAdapters(options.agentIds, { probeAuth: options.probeAuth });
-  const results: AgentRunResult[] = [];
-  for (const preflight of preflights) {
-    results.push(await runAgent(repoPath, outputPath, workspaceRootPath, options.taskPath, preflight));
-  }
+  const results = await mapWithConcurrency(
+    preflights,
+    agentConcurrency(options),
+    async (preflight) => await runAgent(repoPath, outputPath, workspaceRootPath, options.taskPath, preflight)
+  );
 
   return {
     runId,

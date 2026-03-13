@@ -976,10 +976,10 @@ export async function preflightAdapters(
   agentIds: string[],
   options?: AdapterPreflightOptions
 ): Promise<AdapterPreflightResult[]> {
-  const results: AdapterPreflightResult[] = [];
-  for (const agentId of agentIds) {
-    const adapter = getAdapter(agentId);
-    results.push(await adapter.preflight(options));
-  }
-  return results;
+  return await Promise.all(
+    agentIds.map(async (agentId) => {
+      const adapter = getAdapter(agentId);
+      return await adapter.preflight(options);
+    })
+  );
 }
