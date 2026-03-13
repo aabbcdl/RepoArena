@@ -146,14 +146,6 @@ RepoArena 天然适合社区扩展：
 - 公开 benchmark 套件
 - 报告主题和 UI 视图
 
-## 当前状态
+## 项目文档
 
-这个仓库已经不是纯文档阶段，而是“可运行的基础版”。
-项目定位、MVP 边界和架构思路在 [docs/founder-blueprint.md](/D:/project/AgentArena/docs/founder-blueprint.md)。
-
-## 为什么它有机会
-
-agent infra 里最值得做的，未必是下一个 agent。
-也可能是所有团队都要用来判断“哪个 agent 值得信”的那一层。
-
-RepoArena 就是朝这个方向做的。
+更完整的产品定位、MVP 边界和架构思路见 [docs/founder-blueprint.md](/D:/project/AgentArena/docs/founder-blueprint.md)。
