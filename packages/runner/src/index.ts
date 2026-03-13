@@ -26,12 +26,24 @@ export interface BenchmarkOptions {
   probeAuth?: boolean;
 }
 
+const DEFAULT_JUDGE_TIMEOUT_MS = 5 * 60 * 1_000;
+
 function formatErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function resolveTimeoutMs(value: string | undefined, fallbackMs: number): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackMs;
+}
+
+function judgeTimeoutMs(): number {
+  return resolveTimeoutMs(process.env.REPOARENA_JUDGE_TIMEOUT_MS, DEFAULT_JUDGE_TIMEOUT_MS);
+}
+
 async function runCommand(label: string, command: string, cwd: string): Promise<JudgeResult> {
   const startedAt = Date.now();
+  const timeoutMs = judgeTimeoutMs();
 
   return await new Promise((resolve) => {
     const child = spawn(command, {
@@ -42,6 +54,11 @@ async function runCommand(label: string, command: string, cwd: string): Promise<
 
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+    const timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();
@@ -52,18 +69,20 @@ async function runCommand(label: string, command: string, cwd: string): Promise<
     });
 
     child.on("close", (exitCode) => {
+      clearTimeout(timeoutHandle);
       resolve({
         label,
         command,
         exitCode,
-        success: exitCode === 0,
+        success: exitCode === 0 && !timedOut,
         stdout: stdout.trim(),
-        stderr: stderr.trim(),
+        stderr: `${stderr}${timedOut ? `\nJudge timed out after ${timeoutMs}ms.` : ""}`.trim(),
         durationMs: Date.now() - startedAt
       });
     });
 
     child.on("error", (error) => {
+      clearTimeout(timeoutHandle);
       resolve({
         label,
         command,

@@ -31,6 +31,7 @@ interface ProcessResult {
   exitCode: number | null;
   stdout: string;
   stderr: string;
+  timedOut: boolean;
 }
 
 interface CodexUsageEvent {
@@ -116,6 +117,8 @@ const CURSOR_INTERNAL_CLI = path.join(
   "cli.js"
 );
 
+const DEFAULT_AGENT_TIMEOUT_MS = 15 * 60 * 1_000;
+
 async function sleep(durationMs: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, durationMs));
 }
@@ -147,6 +150,19 @@ function buildAgentPrompt(context: AdapterExecutionContext): string {
 
 function safeNumber(value: number | undefined): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function resolveTimeoutMs(value: string | undefined, fallbackMs: number): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackMs;
+}
+
+function agentTimeoutMs(): number {
+  return resolveTimeoutMs(process.env.REPOARENA_AGENT_TIMEOUT_MS, DEFAULT_AGENT_TIMEOUT_MS);
+}
+
+function formatTimeoutMessage(timeoutMs: number): string {
+  return `Process timed out after ${timeoutMs}ms.`;
 }
 
 async function writeDemoArtifacts(
@@ -194,7 +210,12 @@ async function writeDemoArtifacts(
   return changedFiles;
 }
 
-async function runProcess(command: string, args: string[], cwd: string): Promise<ProcessResult> {
+async function runProcess(
+  command: string,
+  args: string[],
+  cwd: string,
+  timeoutMs = agentTimeoutMs()
+): Promise<ProcessResult> {
   return await new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
@@ -203,6 +224,11 @@ async function runProcess(command: string, args: string[], cwd: string): Promise
 
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+    const timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();
@@ -212,12 +238,18 @@ async function runProcess(command: string, args: string[], cwd: string): Promise
       stderr += chunk.toString();
     });
 
-    child.on("error", reject);
+    child.on("error", (error) => {
+      clearTimeout(timeoutHandle);
+      reject(error);
+    });
     child.on("close", (exitCode) => {
+      clearTimeout(timeoutHandle);
+      const timeoutSuffix = timedOut ? `\n${formatTimeoutMessage(timeoutMs)}` : "";
       resolve({
         exitCode,
         stdout,
-        stderr
+        stderr: `${stderr}${timeoutSuffix}`.trim(),
+        timedOut
       });
     });
   });
@@ -494,6 +526,14 @@ async function probeClaudeLikeAuth(
 
   const parsed = parseClaudeEvents(execution.stdout);
 
+  if (execution.timedOut) {
+    return {
+      status: "blocked",
+      summary: "Authenticated probe timed out before the CLI produced a result.",
+      details: [execution.stderr.trim()].filter(Boolean)
+    };
+  }
+
   if (execution.exitCode === 0) {
     return {
       status: "ready",
@@ -652,15 +692,18 @@ class CodexCliAdapter implements AgentAdapter {
     const summary =
       lastMessage.trim() ||
       parsed.summaryFromEvents ||
-      (execution.exitCode === 0
-        ? "Codex CLI completed without a final message."
-        : "Codex CLI failed before producing a final message.");
+      (execution.timedOut
+        ? "Codex CLI timed out before producing a final message."
+        : execution.exitCode === 0
+          ? "Codex CLI completed without a final message."
+          : "Codex CLI failed before producing a final message.");
 
     await context.trace({
       type: "adapter.codex.result",
       message: execution.exitCode === 0 ? "Codex CLI finished successfully" : "Codex CLI failed",
       metadata: {
         exitCode: execution.exitCode,
+        timedOut: execution.timedOut,
         threadId: parsed.threadId,
         tokenUsage: parsed.tokenUsage,
         changedFilesHint: parsed.changedFilesHint,
@@ -770,15 +813,18 @@ abstract class ClaudeLikeAdapter implements AgentAdapter {
     const parsed = parseClaudeEvents(execution.stdout);
     const summary =
       parsed.summaryFromEvents ||
-      (execution.exitCode === 0
-        ? `${this.title} completed without a final message.`
-        : `${this.title} failed before producing a final message.`);
+      (execution.timedOut
+        ? `${this.title} timed out before producing a final message.`
+        : execution.exitCode === 0
+          ? `${this.title} completed without a final message.`
+          : `${this.title} failed before producing a final message.`);
 
     await context.trace({
       type: eventType,
       message: execution.exitCode === 0 ? `${finishLabel} finished` : `${finishLabel} failed`,
       metadata: {
         exitCode: execution.exitCode,
+        timedOut: execution.timedOut,
         sessionId: parsed.sessionId,
         tokenUsage: parsed.tokenUsage,
         estimatedCostUsd: parsed.estimatedCostUsd,
