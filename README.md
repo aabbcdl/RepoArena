@@ -2,6 +2,8 @@
 
 > The local-first arena for AI coding agents in real repositories.
 
+[中文说明](./README.zh-CN.md)
+
 RepoArena lets you run Claude Code, Codex, Cursor, Devin, and open source agents against the same real repository tasks, then compare success rate, speed, cost, diffs, and replay traces in one report.
 
 ## Current Prototype
