@@ -10,6 +10,8 @@ export interface CommandExecutionSpec {
   command: string;
   cwd?: string;
   timeoutMs?: number;
+  envAllowList?: string[];
+  env?: Record<string, string>;
 }
 
 export interface CommandJudge extends CommandExecutionSpec {
@@ -173,7 +175,10 @@ export function normalizePath(inputPath: string): string {
   return inputPath.split(path.sep).join("/");
 }
 
-export function buildExecutionEnvironment(allowedNames: string[]): NodeJS.ProcessEnv {
+export function buildExecutionEnvironment(
+  allowedNames: string[],
+  overrides: Record<string, string> = {}
+): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
 
   for (const name of [...BASELINE_ENV_NAMES, ...allowedNames]) {
@@ -181,6 +186,10 @@ export function buildExecutionEnvironment(allowedNames: string[]): NodeJS.Proces
     if (value !== undefined) {
       env[name] = value;
     }
+  }
+
+  for (const [name, value] of Object.entries(overrides)) {
+    env[name] = value;
   }
 
   return env;

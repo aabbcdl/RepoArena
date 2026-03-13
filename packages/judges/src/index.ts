@@ -1,6 +1,13 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
-import { CommandExecutionSpec, CommandStepResult, CommandJudge, JudgeResult } from "@repoarena/core";
+import {
+  CommandExecutionSpec,
+  CommandStepResult,
+  CommandJudge,
+  JudgeResult,
+  buildExecutionEnvironment,
+  uniqueSorted
+} from "@repoarena/core";
 
 const DEFAULT_JUDGE_TIMEOUT_MS = 5 * 60 * 1_000;
 
@@ -33,14 +40,23 @@ function resolveCommandWorkingDirectory(workspacePath: string, step: CommandExec
   return candidatePath;
 }
 
+function buildStepEnvironment(
+  baseAllowedNames: string[],
+  step: Pick<CommandExecutionSpec, "envAllowList" | "env">
+): NodeJS.ProcessEnv {
+  const effectiveAllowList = uniqueSorted([...(baseAllowedNames ?? []), ...(step.envAllowList ?? [])]);
+  return buildExecutionEnvironment(effectiveAllowList, step.env ?? {});
+}
+
 export async function runJudge(
   judge: CommandJudge,
   workspacePath: string,
-  environment: NodeJS.ProcessEnv
+  baseAllowedNames: string[]
 ): Promise<JudgeResult> {
   const startedAt = Date.now();
   const timeoutMs = judge.timeoutMs ?? defaultJudgeTimeoutMs();
   const cwd = resolveJudgeWorkingDirectory(workspacePath, judge);
+  const environment = buildStepEnvironment(baseAllowedNames, judge);
 
   return await new Promise((resolve) => {
     const child = spawn(judge.command, {
@@ -103,19 +119,22 @@ export async function runJudge(
 export async function runJudges(
   judges: CommandJudge[],
   workspacePath: string,
-  environment: NodeJS.ProcessEnv
+  baseAllowedNames: string[]
 ): Promise<JudgeResult[]> {
-  return await Promise.all(judges.map(async (judge) => await runJudge(judge, workspacePath, environment)));
+  return await Promise.all(
+    judges.map(async (judge) => await runJudge(judge, workspacePath, baseAllowedNames))
+  );
 }
 
 export async function runCommandStep(
   step: CommandExecutionSpec,
   workspacePath: string,
-  environment: NodeJS.ProcessEnv
+  baseAllowedNames: string[]
 ): Promise<CommandStepResult> {
   const startedAt = Date.now();
   const timeoutMs = step.timeoutMs ?? defaultJudgeTimeoutMs();
   const cwd = resolveCommandWorkingDirectory(workspacePath, step);
+  const environment = buildStepEnvironment(baseAllowedNames, step);
 
   return await new Promise((resolve) => {
     const child = spawn(step.command, {
@@ -176,9 +195,9 @@ export async function runCommandStep(
 export async function runCommandSteps(
   steps: CommandExecutionSpec[],
   workspacePath: string,
-  environment: NodeJS.ProcessEnv
+  baseAllowedNames: string[]
 ): Promise<CommandStepResult[]> {
   return await Promise.all(
-    steps.map(async (step) => await runCommandStep(step, workspacePath, environment))
+    steps.map(async (step) => await runCommandStep(step, workspacePath, baseAllowedNames))
   );
 }

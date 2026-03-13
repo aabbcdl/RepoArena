@@ -18,6 +18,7 @@ The current version focuses on a runnable local benchmark loop:
 - isolated workspaces per run
 - versioned task pack loading
 - task-level environment allowlists
+- step-level environment overrides for setup, judges, and teardown
 - diff detection
 - JSON, static HTML, and interactive web report generation
 - support for demo adapters plus external CLI-based adapters

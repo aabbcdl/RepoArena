@@ -42,6 +42,23 @@ function assertStringArray(value: unknown, label: string): string[] {
   return value.map((entry, index) => assertString(entry, `${label}[${index}]`));
 }
 
+function assertStringRecord(value: unknown, label: string): Record<string, string> | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`Task pack field "${label}" must be an object of string values when provided.`);
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>).map(([key, entryValue]) => [
+    key,
+    assertString(entryValue, `${label}.${key}`)
+  ]);
+
+  return Object.fromEntries(entries);
+}
+
 function normalizeJudge(
   value: Record<string, unknown>,
   index: number,
@@ -60,7 +77,9 @@ function normalizeJudge(
     type: "command",
     command: assertString(value.command, `judges[${index}].command`),
     cwd: assertOptionalString(value.cwd, `judges[${index}].cwd`),
-    timeoutMs: assertOptionalPositiveInteger(value.timeoutMs, `judges[${index}].timeoutMs`)
+    timeoutMs: assertOptionalPositiveInteger(value.timeoutMs, `judges[${index}].timeoutMs`),
+    envAllowList: assertStringArray(value.envAllowList, `judges[${index}].envAllowList`),
+    env: assertStringRecord(value.env, `judges[${index}].env`)
   };
 }
 
@@ -77,7 +96,9 @@ function normalizeCommandSpec(
     label: assertString(value.label, `${fieldName}[${index}].label`),
     command: assertString(value.command, `${fieldName}[${index}].command`),
     cwd: assertOptionalString(value.cwd, `${fieldName}[${index}].cwd`),
-    timeoutMs: assertOptionalPositiveInteger(value.timeoutMs, `${fieldName}[${index}].timeoutMs`)
+    timeoutMs: assertOptionalPositiveInteger(value.timeoutMs, `${fieldName}[${index}].timeoutMs`),
+    envAllowList: assertStringArray(value.envAllowList, `${fieldName}[${index}].envAllowList`),
+    env: assertStringRecord(value.env, `${fieldName}[${index}].env`)
   };
 }
 

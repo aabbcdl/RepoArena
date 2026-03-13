@@ -84,8 +84,10 @@ Each command judge can define:
 - `command`
 - optional `cwd`
 - optional `timeoutMs`
+- optional step-level `envAllowList`
+- optional inline `env`
 
-Environment handling is allowlist-based. Task packs can expose specific host variables through `envAllowList`, and RepoArena only passes that filtered environment to setup commands, judges, teardown commands, and agent execution.
+Environment handling is allowlist-based. Task packs can expose specific host variables through `envAllowList`, and each setup/judge/teardown step can further extend that allowlist or inject inline `env` overrides. Agent execution still receives the task-level filtered environment.
 
 ## Design Principles
 

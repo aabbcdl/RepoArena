@@ -163,7 +163,7 @@ async function runAgent(
     }
   });
 
-  const setupResults = await runCommandSteps(task.setupCommands, workspacePath, executionEnvironment);
+  const setupResults = await runCommandSteps(task.setupCommands, workspacePath, task.envAllowList);
   await traceRecorder.record({
     agentId: preflight.agentId,
     timestamp: new Date().toISOString(),
@@ -233,14 +233,14 @@ async function runAgent(
       }
     });
 
-    const judgeResults = await runJudges(task.judges, workspacePath, executionEnvironment);
+    const judgeResults = await runJudges(task.judges, workspacePath, task.envAllowList);
 
     const afterSnapshot = await snapshotDirectory(workspacePath);
     const diff = diffSnapshots(beforeSnapshot, afterSnapshot);
     const teardownResults = await runCommandSteps(
       task.teardownCommands,
       workspacePath,
-      executionEnvironment
+      task.envAllowList
     );
     const durationMs = Date.now() - startedAt;
     const success =

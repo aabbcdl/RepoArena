@@ -130,3 +130,66 @@ test("loadTaskPack parses setup and teardown commands", async () => {
 
   await rm(tempDir, { recursive: true, force: true });
 });
+
+test("loadTaskPack parses step-level env allowlists and overrides", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "repoarena-taskpack-"));
+  const taskPath = path.join(tempDir, "task.json");
+
+  await writeFile(
+    taskPath,
+    JSON.stringify(
+      {
+        schemaVersion: "repoarena.taskpack/v1",
+        id: "with-step-env",
+        title: "Step Env Task",
+        prompt: "Run step-level env configuration",
+        setupCommands: [
+          {
+            label: "Prepare fixtures",
+            command: "node prepare.js",
+            envAllowList: ["REPOARENA_SETUP_TOKEN"],
+            env: {
+              REPOARENA_INLINE_SETUP: "enabled"
+            }
+          }
+        ],
+        judges: [
+          {
+            id: "judge-env",
+            type: "command",
+            label: "Judge sees extra env",
+            command: "node judge.js",
+            envAllowList: ["REPOARENA_JUDGE_TOKEN"],
+            env: {
+              REPOARENA_INLINE_JUDGE: "enabled"
+            }
+          }
+        ],
+        teardownCommands: [
+          {
+            label: "Cleanup fixtures",
+            command: "node cleanup.js",
+            envAllowList: ["REPOARENA_TEARDOWN_TOKEN"],
+            env: {
+              REPOARENA_INLINE_TEARDOWN: "enabled"
+            }
+          }
+        ]
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const taskPack = await loadTaskPack(taskPath);
+
+  assert.deepEqual(taskPack.setupCommands[0].envAllowList, ["REPOARENA_SETUP_TOKEN"]);
+  assert.deepEqual(taskPack.setupCommands[0].env, { REPOARENA_INLINE_SETUP: "enabled" });
+  assert.deepEqual(taskPack.judges[0].envAllowList, ["REPOARENA_JUDGE_TOKEN"]);
+  assert.deepEqual(taskPack.judges[0].env, { REPOARENA_INLINE_JUDGE: "enabled" });
+  assert.deepEqual(taskPack.teardownCommands[0].envAllowList, ["REPOARENA_TEARDOWN_TOKEN"]);
+  assert.deepEqual(taskPack.teardownCommands[0].env, { REPOARENA_INLINE_TEARDOWN: "enabled" });
+
+  await rm(tempDir, { recursive: true, force: true });
+});

@@ -34,3 +34,15 @@ test("buildExecutionEnvironment includes only baseline and allowlisted variables
   assert.equal(environment.REPOARENA_BLOCKED_TEST, undefined);
   assert.ok(environment.PATH || environment.Path);
 });
+
+test("buildExecutionEnvironment applies inline overrides", () => {
+  process.env.REPOARENA_ALLOWED_TEST = "visible";
+
+  const environment = buildExecutionEnvironment(["REPOARENA_ALLOWED_TEST"], {
+    REPOARENA_ALLOWED_TEST: "overridden",
+    REPOARENA_INLINE_ONLY: "inline"
+  });
+
+  assert.equal(environment.REPOARENA_ALLOWED_TEST, "overridden");
+  assert.equal(environment.REPOARENA_INLINE_ONLY, "inline");
+});
