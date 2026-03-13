@@ -1,11 +1,16 @@
 const state = {
+  runs: [],
   run: null,
+  selectedRunId: null,
   selectedAgentId: null
 };
 
 const elements = {
   fileInput: document.querySelector("#summary-file"),
+  folderInput: document.querySelector("#runs-folder"),
   runInfo: document.querySelector("#run-info"),
+  runList: document.querySelector("#run-list"),
+  runCount: document.querySelector("#run-count"),
   agentList: document.querySelector("#agent-list"),
   agentCount: document.querySelector("#agent-count"),
   emptyState: document.querySelector("#empty-state"),
@@ -49,6 +54,34 @@ function setHidden(element, hidden) {
   element.classList.toggle("hidden", hidden);
 }
 
+function sortRuns(runs) {
+  return [...runs].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+function updateCurrentRun() {
+  state.run = state.runs.find((run) => run.runId === state.selectedRunId) ?? null;
+  if (!state.run) {
+    state.selectedAgentId = null;
+    return;
+  }
+
+  if (!state.run.results.some((result) => result.agentId === state.selectedAgentId)) {
+    state.selectedAgentId = state.run.results[0]?.agentId ?? null;
+  }
+}
+
+function applyRuns(runs) {
+  state.runs = sortRuns(runs);
+  state.selectedRunId = state.runs[0]?.runId ?? null;
+  updateCurrentRun();
+  render();
+}
+
+function applySingleRun(run) {
+  const existingRuns = state.runs.filter((entry) => entry.runId !== run.runId);
+  applyRuns([run, ...existingRuns]);
+}
+
 function renderRunInfo(run) {
   elements.runInfo.innerHTML = `
     <div class="panel-header">
@@ -59,6 +92,32 @@ function renderRunInfo(run) {
     <p class="muted">Task schema ${escapeHtml(run.task.schemaVersion)}</p>
   `;
   setHidden(elements.runInfo, false);
+}
+
+function renderRunList() {
+  elements.runCount.textContent = String(state.runs.length);
+
+  if (state.runs.length === 0) {
+    elements.runList.className = "run-list empty-state";
+    elements.runList.textContent = "No runs loaded.";
+    return;
+  }
+
+  elements.runList.className = "run-list";
+  elements.runList.innerHTML = state.runs
+    .map((run) => {
+      const active = run.runId === state.selectedRunId ? "active" : "";
+      const successCount = run.results.filter((result) => result.status === "success").length;
+
+      return `
+        <button class="run-button ${active}" type="button" data-run-id="${escapeHtml(run.runId)}">
+          <strong>${escapeHtml(run.task.title)}</strong>
+          <div class="meta">${escapeHtml(run.createdAt)}</div>
+          <div class="meta">${successCount}/${run.results.length} success · ${escapeHtml(run.runId)}</div>
+        </button>
+      `;
+    })
+    .join("");
 }
 
 function renderMetrics(run) {
@@ -258,10 +317,25 @@ function renderDashboard(run) {
   renderSelectedAgent();
 }
 
-function applyRun(run) {
-  state.run = run;
-  state.selectedAgentId = run.results[0]?.agentId ?? null;
-  renderDashboard(run);
+function render() {
+  renderRunList();
+
+  if (!state.run) {
+    setHidden(elements.runInfo, true);
+    setHidden(elements.emptyState, false);
+    setHidden(elements.dashboard, true);
+    elements.agentCount.textContent = "0";
+    elements.agentList.className = "agent-list empty-state";
+    elements.agentList.textContent = "No report loaded.";
+    return;
+  }
+
+  renderDashboard(state.run);
+}
+
+async function readRunFromFile(file) {
+  const parsed = JSON.parse(await file.text());
+  return parsed;
 }
 
 async function handleFileSelection(event) {
@@ -270,12 +344,36 @@ async function handleFileSelection(event) {
     return;
   }
 
-  const text = await file.text();
-  const parsed = JSON.parse(text);
-  applyRun(parsed);
+  const run = await readRunFromFile(file);
+  applySingleRun(run);
+}
+
+async function handleFolderSelection(event) {
+  const files = Array.from(event.target.files ?? []).filter((file) =>
+    file.name.toLowerCase() === "summary.json"
+  );
+
+  if (files.length === 0) {
+    return;
+  }
+
+  const runs = await Promise.all(files.map(async (file) => await readRunFromFile(file)));
+  applyRuns(runs);
 }
 
 elements.fileInput.addEventListener("change", handleFileSelection);
+elements.folderInput.addEventListener("change", handleFolderSelection);
+
+elements.runList.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-run-id]");
+  if (!button) {
+    return;
+  }
+
+  state.selectedRunId = button.getAttribute("data-run-id");
+  updateCurrentRun();
+  render();
+});
 
 elements.agentList.addEventListener("click", (event) => {
   const button = event.target.closest("[data-agent-id]");

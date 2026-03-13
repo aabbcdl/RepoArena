@@ -113,6 +113,11 @@ input {
   gap: 10px;
 }
 
+.run-list {
+  display: grid;
+  gap: 10px;
+}
+
 .agent-button {
   width: 100%;
   text-align: left;
@@ -121,6 +126,27 @@ input {
   padding: 12px;
   background: transparent;
   cursor: pointer;
+}
+
+.run-button {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.run-button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.run-button .meta {
+  margin-top: 6px;
+  font-size: 0.86rem;
+  color: var(--muted);
 }
 
 .agent-button.active {

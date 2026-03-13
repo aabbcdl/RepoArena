@@ -20,7 +20,20 @@
           <input id="summary-file" type="file" accept=".json,application/json" />
         </label>
 
+        <label class="file-picker">
+          <span>Load Runs Folder</span>
+          <input id="runs-folder" type="file" webkitdirectory directory multiple />
+        </label>
+
         <div id="run-info" class="panel hidden"></div>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Runs</h2>
+            <span id="run-count" class="muted">0</span>
+          </div>
+          <div id="run-list" class="run-list empty-state">No runs loaded.</div>
+        </section>
 
         <section class="panel">
           <div class="panel-header">
