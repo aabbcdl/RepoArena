@@ -76,6 +76,44 @@
       </aside>
 
       <main class="content">
+        <section id="launcher-panel" class="detail-card hidden">
+          <div class="panel-header">
+            <h2 id="launcher-title">Run Benchmark</h2>
+            <span id="launcher-mode" class="muted">Local service</span>
+          </div>
+          <p id="launcher-description" class="muted"></p>
+          <div class="launcher-grid">
+            <label class="field">
+              <span id="launcher-repo-label">Repository Path</span>
+              <input id="launcher-repo-path" type="text" />
+            </label>
+            <label class="field">
+              <span id="launcher-task-select-label">Official Task Pack</span>
+              <select id="launcher-task-select"></select>
+            </label>
+            <label class="field">
+              <span id="launcher-task-path-label">Task Pack Path</span>
+              <input id="launcher-task-path" type="text" />
+            </label>
+            <label class="field">
+              <span id="launcher-output-label">Output Folder</span>
+              <input id="launcher-output-path" type="text" />
+            </label>
+          </div>
+          <section class="field">
+            <span id="launcher-agents-label">Agents</span>
+            <div id="launcher-agents" class="checkbox-grid"></div>
+          </section>
+          <div class="launcher-actions">
+            <label class="checkbox">
+              <input id="launcher-probe-auth" type="checkbox" checked />
+              <span id="launcher-probe-auth-label">Probe auth before run</span>
+            </label>
+            <button id="launcher-run" type="button">Start Benchmark</button>
+          </div>
+          <p id="launcher-status" class="muted"></p>
+        </section>
+
         <section id="empty-state" class="hero">
           <p id="hero-eyebrow" class="eyebrow">Interactive Viewer</p>
           <h2 id="hero-title">Inspect one run without scrolling through a giant static page.</h2>

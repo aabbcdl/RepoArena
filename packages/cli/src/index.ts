@@ -1,10 +1,14 @@
 #!/usr/bin/env node
+import http from "node:http";
+import { exec } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { listAvailableAdapters, preflightAdapters } from "@repoarena/adapters";
 import { AdapterPreflightResult, BenchmarkRun, formatDuration } from "@repoarena/core";
 import { writeReport } from "@repoarena/report";
 import { runBenchmark } from "@repoarena/runner";
+import { loadTaskPack } from "@repoarena/taskpacks";
 
 interface ParsedArgs {
   command?: string;
@@ -22,7 +26,26 @@ interface ParsedArgs {
   force: boolean;
   workflowPath?: string;
   ciOutputDir?: string;
+  host?: string;
+  port?: number;
+  noOpen?: boolean;
 }
+
+interface UiRunPayload {
+  repoPath: string;
+  taskPath: string;
+  agentIds: string[];
+  outputPath?: string;
+  probeAuth?: boolean;
+  updateSnapshots?: boolean;
+  maxConcurrency?: number;
+}
+
+const CLI_PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const WORKSPACE_ROOT = path.resolve(CLI_PACKAGE_ROOT, "..", "..");
+const WEB_REPORT_DIST_ROOT = path.join(WORKSPACE_ROOT, "apps", "web-report", "dist");
+const OFFICIAL_TASKPACK_ROOT = path.join(WORKSPACE_ROOT, "examples", "taskpacks", "official");
+const DEFAULT_UI_PORT = 4317;
 
 const TASKPACK_TEMPLATES: Record<string, string> = {
   "repo-health": `schemaVersion: repoarena.taskpack/v1
@@ -132,6 +155,7 @@ Usage:
   repoarena list-adapters [--json]
   repoarena init-taskpack [--template <name>] [--output <path>] [--force]
   repoarena init-ci [--task <path>] [--agents <comma,separated>] [--output <workflow.yml>] [--ci-template <pull-request|smoke|nightly>] [--ci-output-dir <path>] [--force]
+  repoarena ui [--host <host>] [--port <port>] [--no-open]
 
 Examples:
   repoarena run --repo . --task examples/taskpacks/demo-repo-health.json --agents demo-fast,demo-thorough
@@ -145,6 +169,7 @@ Examples:
   repoarena init-taskpack --template repo-health --output repoarena.taskpack.yaml
   repoarena init-ci --task repoarena.taskpack.yaml --agents demo-fast,codex
   repoarena init-ci --ci-template nightly --task examples/taskpacks/official/repo-health.yaml --agents demo-fast
+  repoarena ui --host 127.0.0.1 --port 4317
 `);
 }
 
@@ -210,6 +235,21 @@ function parseArgs(argv: string[]): ParsedArgs {
         break;
       case "--workflow":
         parsed.workflowPath = args.shift();
+        break;
+      case "--host":
+        parsed.host = args.shift();
+        break;
+      case "--port": {
+        const value = Number.parseInt(args.shift() ?? "", 10);
+        if (!Number.isInteger(value) || value <= 0) {
+          throw new Error("--port must be a positive integer.");
+        }
+
+        parsed.port = value;
+        break;
+      }
+      case "--no-open":
+        parsed.noOpen = true;
         break;
       case "--max-concurrency": {
         const value = Number.parseInt(args.shift() ?? "", 10);
@@ -532,6 +572,268 @@ async function runInitCi(parsed: ParsedArgs): Promise<void> {
   console.log(`output=${ciOutputDir}`);
 }
 
+function jsonResponse(data: unknown, statusCode = 200): { statusCode: number; body: string; headers: Record<string, string> } {
+  return {
+    statusCode,
+    body: JSON.stringify(data, null, 2),
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store"
+    }
+  };
+}
+
+function textResponse(
+  body: string,
+  statusCode = 200,
+  contentType = "text/plain; charset=utf-8"
+): { statusCode: number; body: string; headers: Record<string, string> } {
+  return {
+    statusCode,
+    body,
+    headers: {
+      "Content-Type": contentType,
+      "Cache-Control": "no-store"
+    }
+  };
+}
+
+async function readRequestBody(request: http.IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function listOfficialTaskPacks(): Promise<
+  Array<{ id: string; title: string; description?: string; path: string; source: string }>
+> {
+  try {
+    const entries = await fs.readdir(OFFICIAL_TASKPACK_ROOT, { withFileTypes: true });
+    const files = entries
+      .filter((entry) => entry.isFile() && [".yaml", ".yml", ".json"].includes(path.extname(entry.name).toLowerCase()))
+      .map((entry) => path.join(OFFICIAL_TASKPACK_ROOT, entry.name))
+      .sort();
+
+    const taskPacks = await Promise.all(
+      files.map(async (filePath) => {
+        const taskPack = await loadTaskPack(filePath);
+        return {
+          id: taskPack.id,
+          title: taskPack.title,
+          description: taskPack.description,
+          path: filePath,
+          source: taskPack.metadata?.source ?? "official"
+        };
+      })
+    );
+
+    return taskPacks;
+  } catch {
+    return [];
+  }
+}
+
+function detectContentType(filePath: string): string {
+  const extension = path.extname(filePath).toLowerCase();
+  switch (extension) {
+    case ".html":
+      return "text/html; charset=utf-8";
+    case ".js":
+      return "text/javascript; charset=utf-8";
+    case ".css":
+      return "text/css; charset=utf-8";
+    case ".json":
+      return "application/json; charset=utf-8";
+    case ".svg":
+      return "image/svg+xml";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+async function maybeOpenBrowser(url: string): Promise<void> {
+  const platform = process.platform;
+  const command =
+    platform === "win32"
+      ? `start "" "${url}"`
+      : platform === "darwin"
+        ? `open "${url}"`
+        : `xdg-open "${url}"`;
+
+  await new Promise<void>((resolve) => {
+    exec(command, { shell: platform === "win32" ? "cmd.exe" : process.env.SHELL ?? "/bin/sh" }, () =>
+      resolve()
+    );
+  });
+}
+
+async function runUi(parsed: ParsedArgs): Promise<void> {
+  const host = parsed.host ?? "127.0.0.1";
+  const port = parsed.port ?? DEFAULT_UI_PORT;
+  let activeRun: Promise<unknown> | null = null;
+
+  const server = http.createServer(async (request, response) => {
+    try {
+      const requestUrl = new URL(request.url ?? "/", `http://${host}:${port}`);
+
+      if (request.method === "GET" && requestUrl.pathname === "/api/ui-info") {
+        response.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+        response.end(
+          JSON.stringify(
+            {
+              mode: "local-service",
+              repoPath: process.cwd(),
+              defaultTaskPath: path.join(OFFICIAL_TASKPACK_ROOT, "repo-health.yaml"),
+              defaultOutputPath: path.join(process.cwd(), ".repoarena", "ui-runs"),
+              host,
+              port
+            },
+            null,
+            2
+          )
+        );
+        return;
+      }
+
+      if (request.method === "GET" && requestUrl.pathname === "/api/adapters") {
+        const adapters = listAvailableAdapters().map((adapter) => ({
+          id: adapter.id,
+          title: adapter.title,
+          kind: adapter.kind,
+          capability: adapter.capability
+        }));
+        const payload = jsonResponse(adapters);
+        response.writeHead(payload.statusCode, payload.headers);
+        response.end(payload.body);
+        return;
+      }
+
+      if (request.method === "GET" && requestUrl.pathname === "/api/taskpacks") {
+        const taskPacks = await listOfficialTaskPacks();
+        const payload = jsonResponse(taskPacks);
+        response.writeHead(payload.statusCode, payload.headers);
+        response.end(payload.body);
+        return;
+      }
+
+      if (request.method === "POST" && requestUrl.pathname === "/api/run") {
+        if (activeRun) {
+          const payload = jsonResponse({ error: "A benchmark run is already in progress." }, 409);
+          response.writeHead(payload.statusCode, payload.headers);
+          response.end(payload.body);
+          return;
+        }
+
+        const rawBody = await readRequestBody(request);
+        const payload = JSON.parse(rawBody) as UiRunPayload;
+        if (!payload.repoPath || !payload.taskPath || !Array.isArray(payload.agentIds) || payload.agentIds.length === 0) {
+          const invalid = jsonResponse(
+            { error: "repoPath, taskPath, and at least one agentId are required." },
+            400
+          );
+          response.writeHead(invalid.statusCode, invalid.headers);
+          response.end(invalid.body);
+          return;
+        }
+
+        activeRun = (async () => {
+          const benchmark = await runBenchmark({
+            repoPath: payload.repoPath,
+            taskPath: payload.taskPath,
+            agentIds: payload.agentIds,
+            outputPath: payload.outputPath,
+            probeAuth: payload.probeAuth,
+            updateSnapshots: payload.updateSnapshots,
+            maxConcurrency: payload.maxConcurrency
+          });
+          const report = await writeReport(benchmark);
+          const run = JSON.parse(await fs.readFile(report.jsonPath, "utf8"));
+          const markdown = await fs.readFile(report.markdownPath, "utf8");
+          return {
+            run,
+            markdown,
+            report
+          };
+        })();
+
+        try {
+          const runResult = await activeRun;
+          const successPayload = jsonResponse(runResult);
+          response.writeHead(successPayload.statusCode, successPayload.headers);
+          response.end(successPayload.body);
+        } finally {
+          activeRun = null;
+        }
+
+        return;
+      }
+
+      if (request.method === "GET") {
+        let filePath = requestUrl.pathname === "/" ? path.join(WEB_REPORT_DIST_ROOT, "index.html") : path.join(WEB_REPORT_DIST_ROOT, requestUrl.pathname.replace(/^\/+/, ""));
+        filePath = path.normalize(filePath);
+        if (!filePath.startsWith(WEB_REPORT_DIST_ROOT)) {
+          const forbidden = textResponse("Forbidden", 403);
+          response.writeHead(forbidden.statusCode, forbidden.headers);
+          response.end(forbidden.body);
+          return;
+        }
+
+        try {
+          const body = await fs.readFile(filePath);
+          response.writeHead(200, {
+            "Content-Type": detectContentType(filePath),
+            "Cache-Control": "no-store"
+          });
+          response.end(body);
+          return;
+        } catch {
+          const notFound = textResponse("Not Found", 404);
+          response.writeHead(notFound.statusCode, notFound.headers);
+          response.end(notFound.body);
+          return;
+        }
+      }
+
+      const methodNotAllowed = textResponse("Method Not Allowed", 405);
+      response.writeHead(methodNotAllowed.statusCode, methodNotAllowed.headers);
+      response.end(methodNotAllowed.body);
+    } catch (error) {
+      const payload = jsonResponse(
+        { error: error instanceof Error ? error.message : String(error) },
+        500
+      );
+      response.writeHead(payload.statusCode, payload.headers);
+      response.end(payload.body);
+    }
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, host, () => resolve());
+  });
+
+  const url = `http://${host}:${port}`;
+  console.log(`\nRepoArena UI server running`);
+  console.log(`url=${url}`);
+  console.log(`repo=${process.cwd()}`);
+
+  if (!parsed.noOpen) {
+    await maybeOpenBrowser(url);
+  }
+
+  await new Promise<void>((resolve) => {
+    const closeServer = () => {
+      server.close(() => resolve());
+    };
+
+    process.once("SIGINT", closeServer);
+    process.once("SIGTERM", closeServer);
+  });
+}
+
 async function runBenchmarkCommand(parsed: ParsedArgs): Promise<void> {
   if (!parsed.repoPath || !parsed.taskPath || parsed.agentIds.length === 0) {
     throw new Error("Missing required arguments. Use --repo, --task, and --agents.");
@@ -655,6 +957,11 @@ async function main(): Promise<void> {
 
   if (parsed.command === "init-ci") {
     await runInitCi(parsed);
+    return;
+  }
+
+  if (parsed.command === "ui") {
+    await runUi(parsed);
     return;
   }
 

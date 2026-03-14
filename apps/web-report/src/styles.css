@@ -304,6 +304,62 @@ input {
   padding: 10px 12px;
 }
 
+.launcher-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.field span {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.field input,
+.field select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--paper);
+  padding: 10px 12px;
+}
+
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.launcher-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.launcher-actions button {
+  border: 1px solid var(--border);
+  background: var(--accent);
+  color: var(--paper);
+  border-radius: 999px;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
 .compare-table-wrap {
   overflow-x: auto;
 }

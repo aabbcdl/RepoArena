@@ -18,7 +18,12 @@ const state = {
   markdownByRunId: new Map(),
   standaloneMarkdown: null,
   language: "zh-CN",
-  notice: null
+  notice: null,
+  serviceInfo: null,
+  availableAdapters: [],
+  availableTaskPacks: [],
+  runInProgress: false,
+  launcherSelectedAgentIds: ["demo-fast", "codex"]
 };
 
 const elements = {
@@ -26,6 +31,15 @@ const elements = {
   markdownInput: document.querySelector("#markdown-file"),
   folderInput: document.querySelector("#runs-folder"),
   languageSelect: document.querySelector("#language-select"),
+  launcherPanel: document.querySelector("#launcher-panel"),
+  launcherRepoPath: document.querySelector("#launcher-repo-path"),
+  launcherTaskSelect: document.querySelector("#launcher-task-select"),
+  launcherTaskPath: document.querySelector("#launcher-task-path"),
+  launcherOutputPath: document.querySelector("#launcher-output-path"),
+  launcherAgents: document.querySelector("#launcher-agents"),
+  launcherProbeAuth: document.querySelector("#launcher-probe-auth"),
+  launcherRun: document.querySelector("#launcher-run"),
+  launcherStatus: document.querySelector("#launcher-status"),
   runInfo: document.querySelector("#run-info"),
   workflowList: document.querySelector("#workflow-list"),
   nextStepsContent: document.querySelector("#next-steps-content"),
@@ -163,7 +177,22 @@ const MESSAGES = {
     judgeTypeAll: "All Types",
     judgeStatusAll: "All Statuses",
     judgeStatusPass: "Pass",
-    judgeStatusFail: "Fail"
+    judgeStatusFail: "Fail",
+    launcherTitle: "Run Benchmark",
+    launcherDescription: "Use the local RepoArena service to start a benchmark from this page.",
+    launcherRepoLabel: "Repository Path",
+    launcherTaskSelectLabel: "Official Task Pack",
+    launcherTaskPathLabel: "Task Pack Path",
+    launcherOutputLabel: "Output Folder",
+    launcherAgentsLabel: "Agents",
+    launcherProbeAuthLabel: "Probe auth before run",
+    launcherRunButton: "Start Benchmark",
+    launcherStatusIdle: "Fill in the repository path, task pack, and agents, then start the benchmark.",
+    launcherStatusRunning: "Benchmark is running. This can take a while for real external agents.",
+    launcherStatusDone: (title) => `Benchmark finished. Current report: ${title}.`,
+    launcherStatusError: (message) => `Run failed: ${message}`,
+    launcherMode: "Local service",
+    taskPackCustom: "Custom path"
   },
   "zh-CN": {
     appTitle: "交互报告",
@@ -257,7 +286,22 @@ const MESSAGES = {
     judgeTypeAll: "全部类型",
     judgeStatusAll: "全部状态",
     judgeStatusPass: "通过",
-    judgeStatusFail: "失败"
+    judgeStatusFail: "失败",
+    launcherTitle: "发起 Benchmark",
+    launcherDescription: "通过本地 RepoArena 服务，直接在这个页面里发起一次 benchmark。",
+    launcherRepoLabel: "仓库路径",
+    launcherTaskSelectLabel: "官方任务包",
+    launcherTaskPathLabel: "任务包路径",
+    launcherOutputLabel: "输出目录",
+    launcherAgentsLabel: "Agents",
+    launcherProbeAuthLabel: "运行前先探测鉴权",
+    launcherRunButton: "开始跑分",
+    launcherStatusIdle: "填好仓库路径、任务包和 agent，然后直接开始跑分。",
+    launcherStatusRunning: "Benchmark 正在运行。真实外部 agent 可能需要一段时间。",
+    launcherStatusDone: (title) => `Benchmark 已完成。当前报告：${title}。`,
+    launcherStatusError: (message) => `运行失败：${message}`,
+    launcherMode: "本地服务",
+    taskPackCustom: "自定义路径"
   }
 };
 
@@ -350,6 +394,15 @@ function renderStaticText() {
   setText("agent-trend-description", t("agentTrendDescription"));
   setText("judge-filters-title", t("judgeFiltersTitle"));
   setText("markdown-summary-title", t("markdownSummaryTitle"));
+  setText("launcher-title", t("launcherTitle"));
+  setText("launcher-mode", t("launcherMode"));
+  setText("launcher-description", t("launcherDescription"));
+  setText("launcher-repo-label", t("launcherRepoLabel"));
+  setText("launcher-task-select-label", t("launcherTaskSelectLabel"));
+  setText("launcher-task-path-label", t("launcherTaskPathLabel"));
+  setText("launcher-output-label", t("launcherOutputLabel"));
+  setText("launcher-agents-label", t("launcherAgentsLabel"));
+  setText("launcher-probe-auth-label", t("launcherProbeAuthLabel"));
   setText("expand-all", t("expandLogs"));
   setText("collapse-all", t("collapseLogs"));
   setText("copy-share-card", t("copySummary"));
@@ -377,6 +430,7 @@ function renderStaticText() {
   elements.judgeStatusFilter.options[0].text = t("judgeStatusAll");
   elements.judgeStatusFilter.options[1].text = t("judgeStatusPass");
   elements.judgeStatusFilter.options[2].text = t("judgeStatusFail");
+  elements.launcherRun.textContent = t("launcherRunButton");
   renderList(elements.workflowList, t("workflowSteps"));
   renderList(document.querySelector("#hero-how-list"), t("heroHowSteps"));
 }
@@ -393,6 +447,129 @@ function renderNextSteps() {
   }
 
   elements.nextStepsContent.textContent = t("nextStepsLoaded", state.run, state.runs.length);
+}
+
+function renderLauncher() {
+  if (!state.serviceInfo) {
+    setHidden(elements.launcherPanel, true);
+    return;
+  }
+
+  setHidden(elements.launcherPanel, false);
+  elements.launcherRepoPath.value = elements.launcherRepoPath.value || state.serviceInfo.repoPath || "";
+  elements.launcherOutputPath.value = elements.launcherOutputPath.value || state.serviceInfo.defaultOutputPath || "";
+
+  const options = [
+    `<option value="">${escapeHtml(t("taskPackCustom"))}</option>`,
+    ...state.availableTaskPacks.map(
+      (taskPack) =>
+        `<option value="${escapeHtml(taskPack.path)}">${escapeHtml(taskPack.title)}</option>`
+    )
+  ];
+  elements.launcherTaskSelect.innerHTML = options.join("");
+
+  if (!elements.launcherTaskPath.value && state.serviceInfo.defaultTaskPath) {
+    elements.launcherTaskPath.value = state.serviceInfo.defaultTaskPath;
+    elements.launcherTaskSelect.value = state.serviceInfo.defaultTaskPath;
+  } else if (elements.launcherTaskPath.value) {
+    const matching = state.availableTaskPacks.find((taskPack) => taskPack.path === elements.launcherTaskPath.value);
+    elements.launcherTaskSelect.value = matching ? matching.path : "";
+  }
+
+  elements.launcherAgents.innerHTML = state.availableAdapters
+    .map((adapter) => {
+      const checked = state.launcherSelectedAgentIds.includes(adapter.id) ? "checked" : "";
+      return `
+        <label class="checkbox">
+          <input type="checkbox" value="${escapeHtml(adapter.id)}" ${checked} />
+          <span>${escapeHtml(adapter.title)} <span class="muted">(${escapeHtml(adapter.id)})</span></span>
+        </label>
+      `;
+    })
+    .join("");
+
+  elements.launcherRun.disabled = state.runInProgress;
+  elements.launcherStatus.textContent = state.runInProgress
+    ? t("launcherStatusRunning")
+    : state.notice ?? t("launcherStatusIdle");
+}
+
+async function detectService() {
+  try {
+    const [infoResponse, adaptersResponse, taskPacksResponse] = await Promise.all([
+      fetch("/api/ui-info"),
+      fetch("/api/adapters"),
+      fetch("/api/taskpacks")
+    ]);
+    if (!infoResponse.ok || !adaptersResponse.ok || !taskPacksResponse.ok) {
+      return;
+    }
+
+    state.serviceInfo = await infoResponse.json();
+    state.availableAdapters = await adaptersResponse.json();
+    state.availableTaskPacks = await taskPacksResponse.json();
+  } catch {
+    state.serviceInfo = null;
+    state.availableAdapters = [];
+    state.availableTaskPacks = [];
+  }
+
+  render();
+}
+
+function selectedLauncherAgents() {
+  return Array.from(elements.launcherAgents.querySelectorAll('input[type="checkbox"]:checked')).map((input) =>
+    input.value
+  );
+}
+
+async function handleLauncherRun() {
+  const agentIds = selectedLauncherAgents();
+  const payload = {
+    repoPath: elements.launcherRepoPath.value.trim(),
+    taskPath: elements.launcherTaskPath.value.trim(),
+    outputPath: elements.launcherOutputPath.value.trim() || undefined,
+    agentIds,
+    probeAuth: elements.launcherProbeAuth.checked
+  };
+
+  if (!payload.repoPath || !payload.taskPath || agentIds.length === 0) {
+    state.notice =
+      state.language === "zh-CN"
+        ? "仓库路径、任务包路径和至少一个 agent 是必填项。"
+        : "Repository path, task pack path, and at least one agent are required.";
+    render();
+    return;
+  }
+
+  state.runInProgress = true;
+  state.notice = t("launcherStatusRunning");
+  render();
+
+  try {
+    const response = await fetch("/api/run", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error || "Unknown error");
+    }
+
+    state.notice = t("launcherStatusDone", result.run.task.title);
+    applySingleRun(result.run, result.markdown);
+  } catch (error) {
+    state.runInProgress = false;
+    state.notice = t("launcherStatusError", error instanceof Error ? error.message : String(error));
+    render();
+    return;
+  }
+
+  state.runInProgress = false;
+  render();
 }
 
 function deltaClass(value, preferred = "lower") {
@@ -1174,6 +1351,7 @@ function renderDashboard(run) {
 
 function render() {
   renderStaticText();
+  renderLauncher();
   renderRunList();
 
   if (!state.run) {
@@ -1298,6 +1476,16 @@ async function handleFolderSelection(event) {
 elements.fileInput.addEventListener("change", handleFileSelection);
 elements.markdownInput.addEventListener("change", handleMarkdownSelection);
 elements.folderInput.addEventListener("change", handleFolderSelection);
+elements.launcherTaskSelect.addEventListener("change", (event) => {
+  const value = String(event.target.value ?? "");
+  if (value) {
+    elements.launcherTaskPath.value = value;
+  }
+});
+elements.launcherAgents.addEventListener("change", () => {
+  state.launcherSelectedAgentIds = selectedLauncherAgents();
+});
+elements.launcherRun.addEventListener("click", handleLauncherRun);
 elements.languageSelect.addEventListener("change", (event) => {
   state.language = String(event.target.value ?? "en");
   try {
@@ -1472,4 +1660,5 @@ try {
   state.language = "zh-CN";
 }
 
+detectService();
 render();

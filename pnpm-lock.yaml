@@ -37,6 +37,9 @@ importers:
       '@repoarena/runner':
         specifier: workspace:*
         version: link:../runner
+      '@repoarena/taskpacks':
+        specifier: workspace:*
+        version: link:../taskpacks
 
   packages/core: {}
 

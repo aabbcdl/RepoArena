@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 
@@ -41,6 +42,61 @@ async function runCli(args, cwd, envOverrides = {}) {
       reject(error);
     });
   });
+}
+
+async function getAvailablePort() {
+  return await new Promise((resolve, reject) => {
+    const server = http.createServer();
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      server.close(() => resolve(port));
+    });
+    server.on("error", reject);
+  });
+}
+
+async function startUiServer(cwd, extraArgs = []) {
+  const cliPath = path.resolve("packages/cli/dist/index.js");
+  const port = await getAvailablePort();
+  const child = spawn(process.execPath, [cliPath, "ui", "--host", "127.0.0.1", "--port", String(port), "--no-open", ...extraArgs], {
+    cwd,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: process.env
+  });
+
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk.toString();
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk.toString();
+  });
+
+  const started = await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(`UI server did not start.\nstdout:\n${stdout}\nstderr:\n${stderr}`)), 10000);
+    const onData = () => {
+      if (stdout.includes("RepoArena UI server running")) {
+        clearTimeout(timeout);
+        resolve(true);
+      }
+    };
+    child.stdout.on("data", onData);
+    child.on("error", reject);
+    child.on("exit", (code) => reject(new Error(`UI server exited early with code ${code}.\nstdout:\n${stdout}\nstderr:\n${stderr}`)));
+  });
+
+  return {
+    port,
+    child,
+    stdout,
+    stderr,
+    async stop() {
+      child.kill("SIGTERM");
+      await new Promise((resolve) => child.once("exit", resolve));
+    }
+  };
 }
 
 test("repoarena run exits with code 0 on successful benchmark", async () => {
@@ -338,4 +394,82 @@ test("repoarena init-ci supports nightly templates and custom output directories
   assert.match(content, /cat \.repoarena\/nightly\/summary\.md >> "\$GITHUB_STEP_SUMMARY"/);
 
   await rm(tempDir, { recursive: true, force: true });
+});
+
+test("repoarena ui exposes metadata and adapter APIs", async () => {
+  const server = await startUiServer(path.resolve("."));
+
+  try {
+    const infoResponse = await fetch(`http://127.0.0.1:${server.port}/api/ui-info`);
+    const adaptersResponse = await fetch(`http://127.0.0.1:${server.port}/api/adapters`);
+    const taskPacksResponse = await fetch(`http://127.0.0.1:${server.port}/api/taskpacks`);
+
+    assert.equal(infoResponse.status, 200);
+    assert.equal(adaptersResponse.status, 200);
+    assert.equal(taskPacksResponse.status, 200);
+
+    const info = await infoResponse.json();
+    const adapters = await adaptersResponse.json();
+    const taskPacks = await taskPacksResponse.json();
+
+    assert.equal(info.mode, "local-service");
+    assert.equal(Array.isArray(adapters), true);
+    assert.equal(adapters.some((adapter) => adapter.id === "demo-fast"), true);
+    assert.equal(Array.isArray(taskPacks), true);
+  } finally {
+    await server.stop();
+  }
+});
+
+test("repoarena ui can execute a benchmark via API", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "repoarena-ui-"));
+  const repoPath = path.join(tempDir, "repo");
+  const outputPath = path.join(tempDir, "output");
+  const taskPath = path.join(tempDir, "task.json");
+
+  await mkdir(repoPath, { recursive: true });
+  await writeFile(path.join(repoPath, "README.md"), "# UI Repo\n", "utf8");
+
+  await writeJson(taskPath, {
+    schemaVersion: "repoarena.taskpack/v1",
+    id: "ui-run",
+    title: "UI Run",
+    prompt: "Run from UI",
+    judges: [
+      {
+        id: "pass",
+        type: "command",
+        label: "Always pass",
+        command: "node -e \"process.exit(0)\""
+      }
+    ]
+  });
+
+  const server = await startUiServer(path.resolve("."));
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}/api/run`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        repoPath,
+        taskPath,
+        outputPath,
+        agentIds: ["demo-fast"],
+        probeAuth: false
+      })
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.run.task.title, "UI Run");
+    assert.equal(payload.run.results[0].agentId, "demo-fast");
+    assert.equal(typeof payload.markdown, "string");
+    assert.match(payload.report.htmlPath, /report\.html$/);
+  } finally {
+    await server.stop();
+    await rm(tempDir, { recursive: true, force: true });
+  }
 });
