@@ -120,8 +120,12 @@ test("writeReport sanitizes shareable output paths", async () => {
   assert.equal(badge.message, "1/1 passing");
   assert.match(prComment, /## RepoArena Benchmark/);
   assert.match(prComment, /Overview: `1\/1` passing \| Failed: `0` \| Tokens: `100` \| Known Cost: `\$0\.10`/);
-  assert.match(prComment, /\| Agent \| Tier \| Preflight \| Run \| Duration \| Tokens \| Cost \| Judges \| Files \|/);
-  assert.match(prComment, /\*\*Artifacts\*\*/);
+  assert.match(prComment, /### Review Table/);
+  assert.match(prComment, /\| Attention \| Agent \| Tier \| Preflight \| Run \| Duration \| Tokens \| Cost \| Judges \| Files \| Notes \|/);
+  assert.match(prComment, /\| ok \| demo-fast \| supported \| ready \| success \| 1\.00s \| 100 \| \$0\.10 \| 1\/1 \| 1 \| ready \|/);
+  assert.match(prComment, /### Review Focus/);
+  assert.match(prComment, /- No warnings or failures in this run\./);
+  assert.match(prComment, /### Artifacts/);
   assert.match(prComment, /`report\.html`/);
 
   await rm(tempDir, { recursive: true, force: true });
@@ -202,9 +206,10 @@ test("writeReport includes a failure summary section for failed agents", async (
   assert.match(markdown, /## Failures/);
   assert.match(markdown, /`demo-fail`: Judge failures detected/);
   assert.match(markdown, /judge `Snapshot Check` \(snapshot\) target=fixtures\/actual\.txt expect=matches fixtures\/expected\.txt/);
-  assert.match(prComment, /\*\*Failures\*\*/);
-  assert.match(prComment, /`demo-fail`: Judge failures detected/);
+  assert.match(prComment, /### Review Focus/);
+  assert.match(prComment, /- result `demo-fail`: Judge failures detected/);
   assert.match(prComment, /judge `Snapshot Check` \(snapshot\) target=fixtures\/actual\.txt expect=matches fixtures\/expected\.txt/);
+  assert.match(prComment, /\| fail \| demo-fail \| supported \| ready \| failed \| 1\.00s \| 50 \| n\/a \| 0\/1 \| 0 \| Judge failures detected \|/);
 
   await rm(tempDir, { recursive: true, force: true });
 });
@@ -282,8 +287,9 @@ test("writeReport includes preflight warnings in PR comments", async () => {
   const { prCommentPath } = await writeReport(benchmarkRun);
   const prComment = await readFile(prCommentPath, "utf8");
 
-  assert.match(prComment, /\*\*Preflight Warnings\*\*/);
-  assert.match(prComment, /`cursor` \(experimental\): unverified - CLI found but auth not verified/);
+  assert.match(prComment, /### Review Focus/);
+  assert.match(prComment, /- preflight `cursor` \(experimental\): unverified - CLI found but auth not verified/);
+  assert.match(prComment, /\| fail \| cursor \| experimental \| unverified \| failed \| 0ms \| 0 \| n\/a \| 0\/0 \| 0 \| Skipped because auth was not verified \|/);
 
   await rm(tempDir, { recursive: true, force: true });
 });

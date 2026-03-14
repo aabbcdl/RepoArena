@@ -1,6 +1,7 @@
 import {
   buildPrTable,
   buildShareCard,
+  getAgentTrendRows,
   getCompareResults,
   getRunCompareRows,
   getRunToRunAgentDiff,
@@ -41,6 +42,8 @@ const elements = {
   compareSort: document.querySelector("#compare-sort"),
   compareSortHint: document.querySelector("#compare-sort-hint"),
   compareTable: document.querySelector("#compare-table"),
+  agentTrendTitle: document.querySelector("#agent-trend-title"),
+  agentTrendTable: document.querySelector("#agent-trend-table"),
   resultSummary: document.querySelector("#result-summary"),
   resultDetails: document.querySelector("#result-details"),
   judgeSearch: document.querySelector("#judge-search"),
@@ -349,6 +352,76 @@ function renderRunDiffTable() {
                   (value) => `${value > 0 ? "+" : ""}${value}`,
                   "higher"
                 )}</td>
+              </tr>
+            `;
+          })
+          .join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderAgentTrendTable(run) {
+  if (!state.selectedAgentId) {
+    elements.agentTrendTitle.textContent = "Agent Trend";
+    elements.agentTrendTable.innerHTML = `<p class="empty-state">Select an agent to view its run history.</p>`;
+    return;
+  }
+
+  const activeResult = run.results.find((result) => result.agentId === state.selectedAgentId) ?? null;
+  elements.agentTrendTitle.textContent = activeResult
+    ? `Agent Trend: ${activeResult.agentTitle}`
+    : `Agent Trend: ${state.selectedAgentId}`;
+
+  const rows = getAgentTrendRows(state.runs, run, state.selectedAgentId);
+  if (rows.length === 0) {
+    elements.agentTrendTable.innerHTML =
+      `<p class="empty-state">No same-task history found for the selected agent.</p>`;
+    return;
+  }
+
+  elements.agentTrendTable.innerHTML = `
+    <p class="muted">Same-task history for <code>${escapeHtml(state.selectedAgentId)}</code>, oldest to newest.</p>
+    <table class="compare-table">
+      <thead>
+        <tr>
+          <th>Run</th>
+          <th>Created</th>
+          <th>Status</th>
+          <th>Duration</th>
+          <th>Tokens</th>
+          <th>Cost</th>
+          <th>Judge Pass</th>
+          <th>Delta vs Previous</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows
+          .map((row) => {
+            const isActive = row.run.runId === state.selectedRunId ? "active" : "";
+            const passedJudges = row.result.judgeResults.filter((judge) => judge.success).length;
+            const deltaParts = [
+              `status ${row.statusChange}`,
+              row.durationDeltaMs === null
+                ? "duration n/a"
+                : `duration ${row.durationDeltaMs > 0 ? "+" : ""}${row.durationDeltaMs}ms`,
+              row.tokenDelta === null ? "tokens n/a" : `tokens ${row.tokenDelta > 0 ? "+" : ""}${row.tokenDelta}`,
+              row.costDelta === null
+                ? "cost n/a"
+                : `cost ${row.costDelta > 0 ? "+" : "-"}$${Math.abs(row.costDelta).toFixed(2)}`,
+              row.judgeDelta === null ? "judges n/a" : `judges ${row.judgeDelta > 0 ? "+" : ""}${row.judgeDelta}`
+            ];
+
+            return `
+              <tr class="${isActive}" data-agent-trend-run-id="${escapeHtml(row.run.runId)}">
+                <td><code>${escapeHtml(row.run.runId)}</code></td>
+                <td>${escapeHtml(row.run.createdAt)}</td>
+                <td><span class="status-badge ${statusClass(row.result.status)}">${escapeHtml(row.result.status)}</span></td>
+                <td>${escapeHtml(formatDuration(row.result.durationMs))}</td>
+                <td>${row.result.tokenUsage}</td>
+                <td>${escapeHtml(formatCost(row.result))}</td>
+                <td>${passedJudges}/${row.result.judgeResults.length}</td>
+                <td><span class="muted">${escapeHtml(deltaParts.join(" | "))}</span></td>
               </tr>
             `;
           })
@@ -779,6 +852,7 @@ function renderDashboard(run) {
   renderPreflights(run);
   renderAgentList(run);
   renderCompareTable(run);
+  renderAgentTrendTable(run);
   populateJudgeFilters(run);
   renderSelectedAgent();
   renderMarkdownPanel();
@@ -797,6 +871,8 @@ function render() {
     elements.runVerdicts.innerHTML = "";
     elements.runCompareTable.innerHTML = "";
     elements.runDiffTable.innerHTML = "";
+    elements.agentTrendTitle.textContent = "Agent Trend";
+    elements.agentTrendTable.innerHTML = "";
     renderMarkdownPanel();
     return;
   }
@@ -895,6 +971,7 @@ elements.agentList.addEventListener("click", (event) => {
   state.selectedAgentId = button.getAttribute("data-agent-id");
   renderAgentList(state.run);
   renderCompareTable(state.run);
+  renderAgentTrendTable(state.run);
   renderSelectedAgent();
 });
 
@@ -907,6 +984,7 @@ elements.compareTable.addEventListener("click", (event) => {
   state.selectedAgentId = row.getAttribute("data-compare-agent-id");
   renderAgentList(state.run);
   renderCompareTable(state.run);
+  renderAgentTrendTable(state.run);
   renderSelectedAgent();
 });
 
@@ -931,7 +1009,19 @@ elements.runDiffTable.addEventListener("click", (event) => {
   renderAgentList(state.run);
   renderCompareTable(state.run);
   renderRunDiffTable();
+  renderAgentTrendTable(state.run);
   renderSelectedAgent();
+});
+
+elements.agentTrendTable.addEventListener("click", (event) => {
+  const row = event.target.closest("[data-agent-trend-run-id]");
+  if (!row) {
+    return;
+  }
+
+  state.selectedRunId = row.getAttribute("data-agent-trend-run-id");
+  updateCurrentRun();
+  render();
 });
 
 elements.expandAll.addEventListener("click", () => {

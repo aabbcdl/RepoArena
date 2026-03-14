@@ -4,6 +4,7 @@ import {
   buildPrTable,
   buildShareCard,
   findPreviousComparableRun,
+  getAgentTrendRows,
   getCompareResults,
   getRunCompareRows,
   getRunToRunAgentDiff,
@@ -183,4 +184,28 @@ test("getRunToRunAgentDiff computes deltas against the previous comparable run",
 
   const codexRow = diff.rows.find((row) => row.agentId === "codex");
   assert.equal(codexRow.statusChange, "failed -> success");
+});
+
+test("getAgentTrendRows tracks one agent across same-task runs", () => {
+  const runs = [
+    createRun("run-a", "Task A", {
+      createdAt: "2026-03-14T09:00:00.000Z",
+      results: [createResult("demo-fast", { durationMs: 2000, tokenUsage: 100, judgeResults: [{ success: true }] })]
+    }),
+    createRun("run-b", "Task A", {
+      createdAt: "2026-03-14T10:00:00.000Z",
+      results: [createResult("demo-fast", { durationMs: 1500, tokenUsage: 130, judgeResults: [{ success: true }, { success: true }] })]
+    }),
+    createRun("run-c", "Task B", {
+      createdAt: "2026-03-14T11:00:00.000Z",
+      results: [createResult("demo-fast", { durationMs: 900 })]
+    })
+  ];
+
+  const rows = getAgentTrendRows(runs, runs[1], "demo-fast");
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].statusChange, "start -> success");
+  assert.equal(rows[1].durationDeltaMs, -500);
+  assert.equal(rows[1].tokenDelta, 30);
+  assert.equal(rows[1].judgeDelta, 1);
 });

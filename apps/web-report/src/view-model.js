@@ -231,3 +231,41 @@ export function getRunToRunAgentDiff(runs, currentRun) {
     })
   };
 }
+
+export function getAgentTrendRows(runs, currentRun, agentId) {
+  if (!currentRun || !agentId) {
+    return [];
+  }
+
+  const sameTaskRuns = [...runs]
+    .filter((run) => run.task.title === currentRun.task.title)
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+
+  const rows = [];
+  let previousResult = null;
+  for (const run of sameTaskRuns) {
+    const result = run.results.find((entry) => entry.agentId === agentId) ?? null;
+    if (!result) {
+      continue;
+    }
+
+    rows.push({
+      run,
+      result,
+      previousResult,
+      statusChange: `${previousResult?.status ?? "start"} -> ${result.status}`,
+      durationDeltaMs: previousResult ? result.durationMs - previousResult.durationMs : null,
+      tokenDelta: previousResult ? result.tokenUsage - previousResult.tokenUsage : null,
+      costDelta:
+        previousResult?.costKnown && result.costKnown
+          ? result.estimatedCostUsd - previousResult.estimatedCostUsd
+          : null,
+      judgeDelta: previousResult
+        ? passedJudgeCount(result) - passedJudgeCount(previousResult)
+        : null
+    });
+    previousResult = result;
+  }
+
+  return rows;
+}

@@ -602,42 +602,61 @@ function renderPrComment(run: BenchmarkRun): string {
   const summary = summarizeRun(run);
   const failedResults = run.results.filter((result) => result.status !== "success");
   const attentionPreflights = run.preflights.filter((preflight) => preflight.status !== "ready");
-  const lines = [
+  const header = [
     "## RepoArena Benchmark",
     "",
     `Task: \`${run.task.title}\``,
     "",
-    `Overview: \`${summary.successCount}/${summary.totalAgents}\` passing | Failed: \`${summary.failedCount}\` | Tokens: \`${summary.totalTokens}\` | Known Cost: \`$${summary.knownCostUsd.toFixed(2)}\``,
+    `Overview: \`${summary.successCount}/${summary.totalAgents}\` passing | Failed: \`${summary.failedCount}\` | Tokens: \`${summary.totalTokens}\` | Known Cost: \`$${summary.knownCostUsd.toFixed(2)}\``
+  ];
+
+  const table = [
     "",
-    "| Agent | Tier | Preflight | Run | Duration | Tokens | Cost | Judges | Files |",
-    "| --- | --- | --- | --- | --- | ---: | --- | --- | ---: |"
+    "### Review Table",
+    "",
+    "| Attention | Agent | Tier | Preflight | Run | Duration | Tokens | Cost | Judges | Files | Notes |",
+    "| --- | --- | --- | --- | --- | --- | ---: | --- | --- | ---: | --- |"
   ];
 
   for (const result of run.results) {
     const passedJudgeCount = result.judgeResults.filter((judge) => judge.success).length;
-    lines.push(
-      `| ${result.agentId} | ${formatSupportTier(result.preflight.capability.supportTier)} | ${result.preflight.status} | ${result.status} | ${formatDuration(result.durationMs)} | ${result.tokenUsage} | ${
+    const failedJudge = result.judgeResults.find((judge) => !judge.success);
+    const attention =
+      result.status !== "success"
+        ? "fail"
+        : result.preflight.status !== "ready"
+          ? "warn"
+          : "ok";
+    const note =
+      result.status !== "success"
+        ? result.summary
+        : failedJudge
+          ? `${failedJudge.label} failed`
+          : result.preflight.status !== "ready"
+            ? result.preflight.summary
+            : "ready";
+    table.push(
+      `| ${attention} | ${result.agentId} | ${formatSupportTier(result.preflight.capability.supportTier)} | ${result.preflight.status} | ${result.status} | ${formatDuration(result.durationMs)} | ${result.tokenUsage} | ${
         result.costKnown ? `$${result.estimatedCostUsd.toFixed(2)}` : "n/a"
-      } | ${passedJudgeCount}/${result.judgeResults.length} | ${result.changedFiles.length} |`
+      } | ${passedJudgeCount}/${result.judgeResults.length} | ${result.changedFiles.length} | ${note.replaceAll("\n", " ")} |`
     );
   }
 
-  if (attentionPreflights.length > 0) {
-    lines.push("", "**Preflight Warnings**");
+  const reviewFocus = ["", "### Review Focus", ""];
+  if (attentionPreflights.length === 0 && failedResults.length === 0) {
+    reviewFocus.push("- No warnings or failures in this run.");
+  } else {
     for (const preflight of attentionPreflights) {
-      lines.push(
-        `- \`${preflight.agentId}\` (${formatSupportTier(preflight.capability.supportTier)}): ${preflight.status} - ${preflight.summary}`
+      reviewFocus.push(
+        `- preflight \`${preflight.agentId}\` (${formatSupportTier(preflight.capability.supportTier)}): ${preflight.status} - ${preflight.summary}`
       );
     }
-  }
 
-  if (failedResults.length > 0) {
-    lines.push("", "**Failures**");
     for (const result of failedResults) {
-      lines.push(`- \`${result.agentId}\`: ${result.summary}`);
+      reviewFocus.push(`- result \`${result.agentId}\`: ${result.summary}`);
       const failedJudges = result.judgeResults.filter((judge) => !judge.success);
       for (const judge of failedJudges) {
-        lines.push(
+        reviewFocus.push(
           `  - judge \`${judge.label}\` (${judge.type})${judge.target ? ` target=${judge.target}` : ""}${
             judge.expectation ? ` expect=${judge.expectation}` : ""
           }`
@@ -646,16 +665,20 @@ function renderPrComment(run: BenchmarkRun): string {
     }
   }
 
-  lines.push("", "**Artifacts**");
-  lines.push("- `summary.json`");
-  lines.push("- `summary.md`");
-  lines.push("- `pr-comment.md`");
-  lines.push("- `report.html`");
-  lines.push("- `badge.json`");
-  lines.push("");
-  lines.push("_Use `report.html` for drill-down, `summary.md` for share text, and `badge.json` for Shields endpoint output._");
+  const artifacts = [
+    "",
+    "### Artifacts",
+    "",
+    "- `summary.json`",
+    "- `summary.md`",
+    "- `pr-comment.md`",
+    "- `report.html`",
+    "- `badge.json`",
+    "",
+    "_Use `report.html` for drill-down, `summary.md` for share text, and `badge.json` for Shields endpoint output._"
+  ];
 
-  return lines.join("\n");
+  return [...header, ...table, ...reviewFocus, ...artifacts].join("\n");
 }
 
 export async function writeReport(
