@@ -14,6 +14,7 @@ Task packs use a versioned schema. The current format is `repoarena.taskpack/v1`
 - Records traces and file changes in isolated workspaces
 - Evaluates outcomes with shared checks
 - Exports JSON, Markdown, and HTML reports
+- Exports a dedicated `pr-comment.md` summary for CI comments
 - Exports a `badge.json` endpoint for report artifacts and status badges
 - Surfaces environment and authentication blockers before a benchmark starts
 
@@ -23,6 +24,7 @@ This repository already contains a runnable prototype with:
 - a local `repoarena run` CLI
 - a local `repoarena doctor` CLI
 - a local `repoarena init-taskpack` CLI
+- a local `repoarena init-ci` CLI
 - built-in demo adapters
 - a working `codex` adapter
 - `claude-code` and `cursor` adapters with auth-aware failure reporting
@@ -77,6 +79,12 @@ Generate a starter YAML task pack:
 node packages/cli/dist/index.js init-taskpack --template repo-health --output repoarena.taskpack.yaml
 ```
 
+Generate a benchmark workflow for GitHub Actions:
+
+```bash
+node packages/cli/dist/index.js init-ci --task repoarena.taskpack.yaml --agents demo-fast,codex
+```
+
 Run the Codex adapter:
 
 ```bash
@@ -103,8 +111,17 @@ Then inspect the generated report in `.repoarena/runs/`.
 Each run now also writes:
 - `summary.json`
 - `summary.md`
+- `pr-comment.md`
 - `report.html`
 - `badge.json`
+
+Example badge payload path:
+
+```text
+.repoarena/runs/<run-id>/badge.json
+```
+
+If you publish that file through any static host, you can point a Shields endpoint badge at it.
 
 ## Task Pack Schema
 
@@ -119,6 +136,14 @@ Built-in starter templates:
 - `repo-health`
 - `json-api`
 - `snapshot`
+
+Official task pack library:
+- `examples/taskpacks/official/repo-health.yaml`
+- `examples/taskpacks/official/failing-test-fix.yaml`
+- `examples/taskpacks/official/snapshot-fix.yaml`
+- `examples/taskpacks/official/config-repair.yaml`
+- `examples/taskpacks/official/small-refactor.yaml`
+- `examples/taskpacks/official/json-contract-repair.yaml`
 
 Each task pack defines:
 - repository task metadata
@@ -196,8 +221,11 @@ docs/
 ## Documentation
 
 - [Project overview](./docs/overview.md)
+- [Benchmark fairness](./docs/fairness.md)
+- [Adapter capabilities](./docs/adapter-capabilities.md)
 - [Web report app](./apps/web-report/README.md)
 - [YAML task pack example](./examples/taskpacks/demo-repo-health.yaml)
+- [Official task packs](./examples/taskpacks/official/README.md)
 
 ## License
 

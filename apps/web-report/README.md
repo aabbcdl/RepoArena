@@ -9,8 +9,10 @@ Interactive local report viewer for RepoArena benchmark summaries.
 - includes a cross-run compare table for browsing multiple benchmark runs
 - shows run metadata, preflights, and agent results
 - includes a sortable compare table for all agents in the selected run
+- highlights best agent, fastest run, lowest known cost, and highest judge pass rate
 - lets you switch between agents without scrolling through a long static page
 - supports judge search plus type and pass/fail filters
+- supports copying share summaries and PR tables from the viewer
 - renders setup, judges, teardown, and diff details in one view
 
 ## Usage

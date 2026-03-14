@@ -1,0 +1,28 @@
+schemaVersion: repoarena.taskpack/v1
+id: official-repo-health
+title: Official Repo Health
+description: Validates baseline repository health after a minimal improvement task.
+metadata:
+  source: official
+  owner: RepoArena
+  objective: Check that an agent can make a small useful change without damaging repository structure.
+  repoTypes:
+    - generic
+    - node
+  tags:
+    - repo-health
+    - maintenance
+  dependencies: []
+  judgeRationale: Basic file and manifest checks catch the most common accidental breakages.
+prompt: |
+  Inspect the repository, make one small useful improvement, and preserve baseline project structure.
+judges:
+  - id: readme-exists
+    type: file-exists
+    label: README exists
+    path: README.md
+  - id: package-manifest-exists
+    type: file-exists
+    label: Package manifest exists
+    path: package.json
+

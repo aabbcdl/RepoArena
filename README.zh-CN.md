@@ -4,25 +4,18 @@
 
 [English README](./README.md)
 
-RepoArena 可以让你在同一个真实仓库、同一组任务、同一套评估规则下运行 Claude Code、Codex、Cursor、Devin 以及开源 agent，并统一比较它们的成功率、耗时、成本、diff 和回放轨迹。
+RepoArena 可以让你在同一个仓库、同一组任务、同一套 judge 规则下运行多个 coding agent，并统一比较它们的成功率、耗时、token、成本、改动文件和回放结果。
 
-## 它能做什么
+## 当前能力
 
-- 在同一个 task pack 上运行多个 coding agent
-- 在隔离 workspace 中记录 trace 和文件改动
-- 用统一检查评估结果
-- 导出 JSON 和 HTML 报告
-- 在 benchmark 开始前暴露环境和鉴权阻塞问题
-
-## 当前状态
-
-当前仓库已经包含一个可运行的原型，具备：
-- 本地 `repoarena run` CLI
-- 本地 `repoarena doctor` CLI
-- 内置 demo adapters
-- 可运行的 `codex` adapter
-- 已接入的 `claude-code` 与 `cursor` adapters，并能正确记录鉴权失败
-- 静态 HTML 与 JSON 报告输出
+- 本地 `repoarena run`、`repoarena doctor`、`repoarena list-adapters`、`repoarena init-taskpack`、`repoarena init-ci` CLI
+- demo adapters，加上 `codex`、`claude-code`、`cursor` 真实 CLI adapter
+- adapter capability matrix 与 preflight
+- JSON / YAML task pack
+- command、file、glob、snapshot、json judge
+- `summary.json`、`summary.md`、`pr-comment.md`、`report.html`、`badge.json`
+- 可交互的 `apps/web-report`
+- GitHub Actions smoke benchmark 和 PR comment
 
 ## 快速开始
 
@@ -31,72 +24,47 @@ pnpm install
 pnpm demo
 ```
 
-执行后会在 `.repoarena/runs/` 下生成带时间戳的 run 目录，并输出本地 `report.html`。
-
 检查 adapter readiness：
 
 ```bash
 pnpm doctor
 ```
 
-只跑 Codex adapter：
+生成 starter task pack：
 
 ```bash
-pnpm demo:codex
+node packages/cli/dist/index.js init-taskpack --template repo-health --output repoarena.taskpack.yaml
 ```
 
-跑完整本地 arena：
+生成 GitHub Actions benchmark workflow：
 
 ```bash
-pnpm demo:arena
+node packages/cli/dist/index.js init-ci --task repoarena.taskpack.yaml --agents demo-fast,codex
 ```
 
-## 示例工作流
+返回机器可读的 benchmark 结果：
 
 ```bash
-repoarena run \
-  --repo . \
-  --task examples/taskpacks/demo-repo-health.json \
-  --agents codex,claude-code,cursor
+node packages/cli/dist/index.js run --repo . --task repoarena.taskpack.yaml --agents demo-fast --json
 ```
 
-然后去 `.repoarena/runs/` 中查看生成的报告。
+## 官方任务库
 
-## 设计原则
+位于 [examples/taskpacks/official](./examples/taskpacks/official/README.md)，当前包含：
 
-### 默认公平
-每个 agent 都应该在同一个仓库快照、同一个 task 定义、同一套评估规则下运行。
-
-### 面向真实仓库
-benchmark 应该对真实维护者有意义，而不是只在 demo 里好看。
-
-### 结果可回放
-如果结果很反常，你应该能打开 trace，看到它为什么会这样。
-
-### 诚实展示 readiness
-如果 adapter 被鉴权或本地环境问题卡住，RepoArena 应该在比较开始前说清楚。
-
-## 仓库结构
-
-```text
-apps/
-  web-report/
-packages/
-  cli/
-  core/
-  runner/
-  adapters/
-  judges/
-  taskpacks/
-  trace/
-  report/
-docs/
-  overview.md
-```
+- `repo-health.yaml`
+- `failing-test-fix.yaml`
+- `snapshot-fix.yaml`
+- `config-repair.yaml`
+- `small-refactor.yaml`
+- `json-contract-repair.yaml`
 
 ## 文档
 
 - [项目概览](./docs/overview.md)
+- [评测公平性](./docs/fairness.md)
+- [Adapter 能力矩阵](./docs/adapter-capabilities.md)
+- [Web Report 说明](./apps/web-report/README.md)
 
 ## 许可证
 

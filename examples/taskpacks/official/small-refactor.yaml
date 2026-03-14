@@ -1,0 +1,29 @@
+schemaVersion: repoarena.taskpack/v1
+id: official-small-refactor
+title: Official Small Refactor
+description: Performs a low-risk refactor while keeping core repository structure intact.
+metadata:
+  source: official
+  owner: RepoArena
+  objective: Measure whether an agent can apply a constrained refactor without destabilizing the codebase.
+  repoTypes:
+    - generic
+    - node
+  tags:
+    - refactor
+    - maintainability
+  dependencies: []
+  judgeRationale: File-presence, source-tree, and manifest checks help detect accidental damage during small refactors.
+prompt: |
+  Make a small maintainability-focused refactor with minimal behavioral risk.
+judges:
+  - id: source-tree-present
+    type: glob
+    label: Source tree still exists
+    pattern: packages/**/src/*.ts
+    minMatches: 1
+  - id: readme-exists
+    type: file-exists
+    label: README still exists
+    path: README.md
+

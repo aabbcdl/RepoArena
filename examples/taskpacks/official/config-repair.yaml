@@ -1,0 +1,32 @@
+schemaVersion: repoarena.taskpack/v1
+id: official-config-repair
+title: Official Config Repair
+description: Repairs a broken configuration file while preserving the intended schema.
+metadata:
+  source: official
+  owner: RepoArena
+  objective: Verify that an agent can recover a broken configuration without introducing unrelated changes.
+  repoTypes:
+    - backend
+    - infra
+    - node
+  tags:
+    - config
+    - repair
+  dependencies: []
+  judgeRationale: JSON schema and targeted value assertions provide a stronger signal than text matching.
+prompt: |
+  Repair the broken configuration and keep it aligned with the expected schema.
+judges:
+  - id: config-schema
+    type: json-schema
+    label: Config matches schema
+    path: fixtures/config.json
+    schemaPath: fixtures/config.schema.json
+  - id: config-mode
+    type: json-value
+    label: Config mode stays production
+    path: fixtures/config.json
+    pointer: /mode
+    expected: production
+

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
+  AdapterCapability,
   AdapterExecutionContext,
   AdapterExecutionResult,
   AdapterPreflightOptions,
@@ -105,6 +106,54 @@ const demoProfiles: Record<string, DemoProfile> = {
 };
 
 const DEFAULT_AGENT_TIMEOUT_MS = 15 * 60 * 1_000;
+const DEMO_CAPABILITY: AdapterCapability = {
+  supportTier: "supported",
+  invocationMethod: "Built-in RepoArena demo adapter",
+  authPrerequisites: [],
+  tokenAvailability: "estimated",
+  costAvailability: "estimated",
+  traceRichness: "partial",
+  knownLimitations: [
+    "Does not execute a real coding agent.",
+    "Token usage and cost are synthetic."
+  ]
+};
+const CODEX_CAPABILITY: AdapterCapability = {
+  supportTier: "supported",
+  invocationMethod: "Codex CLI JSON event stream",
+  authPrerequisites: ["Codex CLI installed and authenticated locally."],
+  tokenAvailability: "available",
+  costAvailability: "unavailable",
+  traceRichness: "full",
+  knownLimitations: [
+    "Cost is not reported by the CLI and remains unknown.",
+    "Output parsing depends on Codex CLI JSON event compatibility."
+  ]
+};
+const CLAUDE_CODE_CAPABILITY: AdapterCapability = {
+  supportTier: "experimental",
+  invocationMethod: "Claude Code CLI stream-json mode",
+  authPrerequisites: ["Claude Code CLI installed and authenticated locally."],
+  tokenAvailability: "available",
+  costAvailability: "available",
+  traceRichness: "partial",
+  knownLimitations: [
+    "Changed files are inferred from workspace diff, not emitted directly by the adapter.",
+    "Authentication and CLI flags may vary by local install."
+  ]
+};
+const CURSOR_CAPABILITY: AdapterCapability = {
+  supportTier: "experimental",
+  invocationMethod: "Cursor internal claude-agent-sdk CLI bridge",
+  authPrerequisites: ["Cursor installed locally.", "Cursor authentication available for agent runs."],
+  tokenAvailability: "available",
+  costAvailability: "available",
+  traceRichness: "partial",
+  knownLimitations: [
+    "Uses an internal Cursor CLI bridge that may change across releases.",
+    "Portable detection depends on local installation layout."
+  ]
+};
 
 async function sleep(durationMs: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, durationMs));
@@ -331,6 +380,7 @@ function createPreflightResult(
   agentId: string,
   agentTitle: string,
   adapterKind: "demo" | "external",
+  capability: AdapterCapability,
   status: AdapterPreflightResult["status"],
   summary: string,
   command?: string,
@@ -340,6 +390,7 @@ function createPreflightResult(
     agentId,
     agentTitle,
     adapterKind,
+    capability,
     status,
     summary,
     command,
@@ -623,6 +674,7 @@ async function probeClaudeLikeAuth(
 
 class DemoAdapter implements AgentAdapter {
   readonly kind = "demo" as const;
+  readonly capability = DEMO_CAPABILITY;
 
   constructor(readonly id: string, readonly title: string, private readonly profile: DemoProfile) {}
 
@@ -631,6 +683,7 @@ class DemoAdapter implements AgentAdapter {
       this.id,
       this.title,
       this.kind,
+      this.capability,
       "ready",
       "Built-in demo adapter is always available."
     );
@@ -684,6 +737,7 @@ class CodexCliAdapter implements AgentAdapter {
   readonly kind = "external" as const;
   readonly id = "codex";
   readonly title = "Codex CLI";
+  readonly capability = CODEX_CAPABILITY;
 
   async preflight(): Promise<AdapterPreflightResult> {
     const invocation = await resolveCodexInvocation();
@@ -694,6 +748,7 @@ class CodexCliAdapter implements AgentAdapter {
           this.id,
           this.title,
           this.kind,
+          this.capability,
           "ready",
           "CLI is installed and responds to --help.",
           invocation.displayCommand
@@ -705,6 +760,7 @@ class CodexCliAdapter implements AgentAdapter {
         this.id,
         this.title,
         this.kind,
+        this.capability,
         "missing",
         "CLI could not be launched.",
         invocation.displayCommand,
@@ -716,6 +772,7 @@ class CodexCliAdapter implements AgentAdapter {
       this.id,
       this.title,
       this.kind,
+      this.capability,
       "unverified",
       "CLI was found, but readiness could not be fully confirmed.",
       invocation.displayCommand
@@ -804,6 +861,7 @@ abstract class ClaudeLikeAdapter implements AgentAdapter {
   abstract readonly id: string;
   abstract readonly title: string;
   abstract readonly kind: "external";
+  abstract readonly capability: AdapterCapability;
   protected abstract resolveInvocation(): Promise<InvocationSpec>;
   abstract execute(context: AdapterExecutionContext): Promise<AdapterExecutionResult>;
 
@@ -817,6 +875,7 @@ abstract class ClaudeLikeAdapter implements AgentAdapter {
           this.id,
           this.title,
           this.kind,
+          this.capability,
           "missing",
           "CLI did not respond successfully to --help.",
           invocation.displayCommand,
@@ -829,6 +888,7 @@ abstract class ClaudeLikeAdapter implements AgentAdapter {
         this.id,
         this.title,
         this.kind,
+        this.capability,
         "missing",
         "CLI could not be launched.",
         invocation.displayCommand,
@@ -842,6 +902,7 @@ abstract class ClaudeLikeAdapter implements AgentAdapter {
         this.id,
         this.title,
         this.kind,
+        this.capability,
         authProbe.status,
         authProbe.summary,
         invocation.displayCommand,
@@ -853,6 +914,7 @@ abstract class ClaudeLikeAdapter implements AgentAdapter {
       this.id,
       this.title,
       this.kind,
+      this.capability,
       "unverified",
       "CLI is installed. Authentication was not probed in this run.",
       invocation.displayCommand
@@ -933,6 +995,7 @@ class ClaudeCodeAdapter extends ClaudeLikeAdapter {
   readonly kind = "external" as const;
   readonly id = "claude-code";
   readonly title = "Claude Code";
+  readonly capability = CLAUDE_CODE_CAPABILITY;
 
   protected async resolveInvocation(): Promise<InvocationSpec> {
     return await resolveClaudeInvocation();
@@ -947,6 +1010,7 @@ class CursorAdapter extends ClaudeLikeAdapter {
   readonly kind = "external" as const;
   readonly id = "cursor";
   readonly title = "Cursor Agent";
+  readonly capability = CURSOR_CAPABILITY;
 
   protected async resolveInvocation(): Promise<InvocationSpec> {
     return await resolveCursorInvocation();
@@ -997,3 +1061,8 @@ export async function preflightAdapters(
     })
   );
 }
+
+export const __testUtils = {
+  parseCodexEvents,
+  parseClaudeEvents
+};

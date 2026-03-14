@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { loadTaskPack } from "../packages/taskpacks/dist/index.js";
@@ -17,6 +17,15 @@ test("loadTaskPack parses schema v1 judges", async () => {
         id: "demo",
         title: "Demo Task",
         prompt: "Do the thing",
+        metadata: {
+          source: "official",
+          owner: "RepoArena",
+          objective: "Demo objective",
+          repoTypes: ["node"],
+          tags: ["demo"],
+          dependencies: [],
+          judgeRationale: "Demo rationale"
+        },
         envAllowList: ["CI", "REPOARENA_TOKEN"],
         judges: [
           {
@@ -52,6 +61,9 @@ test("loadTaskPack parses schema v1 judges", async () => {
   const taskPack = await loadTaskPack(taskPath);
 
   assert.equal(taskPack.schemaVersion, "repoarena.taskpack/v1");
+  assert.equal(taskPack.metadata?.source, "official");
+  assert.equal(taskPack.metadata?.owner, "RepoArena");
+  assert.deepEqual(taskPack.metadata?.repoTypes, ["node"]);
   assert.deepEqual(taskPack.envAllowList, ["CI", "REPOARENA_TOKEN"]);
   assert.equal(taskPack.judges[0].id, "lint");
   assert.equal(taskPack.judges[0].cwd, "app");
@@ -338,4 +350,22 @@ test("loadTaskPack parses snapshot and json-schema judges", async () => {
   assert.equal(taskPack.judges[1].schemaPath, "schema.json");
 
   await rm(tempDir, { recursive: true, force: true });
+});
+
+test("official task pack library files all load with metadata", async () => {
+  const officialDir = path.resolve("examples", "taskpacks", "official");
+  const files = (await readdir(officialDir))
+    .filter((fileName) => fileName.endsWith(".yaml"))
+    .sort();
+
+  assert.equal(files.length >= 6, true);
+
+  for (const fileName of files) {
+    const taskPack = await loadTaskPack(path.join(officialDir, fileName));
+    assert.equal(taskPack.metadata?.source, "official");
+    assert.equal(taskPack.metadata?.owner, "RepoArena");
+    assert.equal(taskPack.metadata?.repoTypes.length > 0, true);
+    assert.equal(taskPack.metadata?.tags.length > 0, true);
+    assert.equal(taskPack.judges.length > 0, true);
+  }
 });

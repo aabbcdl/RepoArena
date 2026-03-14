@@ -12,6 +12,7 @@ import {
   SnapshotJudge,
   TASK_PACK_SCHEMA_V1,
   TaskJudge,
+  TaskPackMetadata,
   TaskPack
 } from "@repoarena/core";
 import { parse as parseYaml } from "yaml";
@@ -103,6 +104,28 @@ function assertObject(value: unknown, label: string): Record<string, unknown> {
   }
 
   return value as Record<string, unknown>;
+}
+
+function normalizeMetadata(value: unknown): TaskPackMetadata | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const metadata = assertObject(value, "metadata");
+  const source = assertString(metadata.source, "metadata.source");
+  if (source !== "official" && source !== "community") {
+    throw new Error(`Task pack field "metadata.source" must be "official" or "community".`);
+  }
+
+  return {
+    source,
+    owner: assertString(metadata.owner, "metadata.owner"),
+    objective: assertOptionalString(metadata.objective, "metadata.objective"),
+    repoTypes: assertStringArray(metadata.repoTypes, "metadata.repoTypes"),
+    tags: assertStringArray(metadata.tags, "metadata.tags"),
+    dependencies: assertStringArray(metadata.dependencies, "metadata.dependencies"),
+    judgeRationale: assertOptionalString(metadata.judgeRationale, "metadata.judgeRationale")
+  };
 }
 
 function normalizeJudge(
@@ -291,6 +314,7 @@ export async function loadTaskPack(taskPath: string): Promise<TaskPack> {
     title: assertString(parsed.title, "title"),
     description: typeof parsed.description === "string" ? parsed.description : undefined,
     prompt: assertString(parsed.prompt, "prompt"),
+    metadata: normalizeMetadata(parsed.metadata),
     envAllowList: assertStringArray(parsed.envAllowList, "envAllowList"),
     setupCommands: setupCommandsInput.map((value, index) => {
       if (!value || typeof value !== "object") {

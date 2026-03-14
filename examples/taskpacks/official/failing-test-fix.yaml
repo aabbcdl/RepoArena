@@ -1,0 +1,30 @@
+schemaVersion: repoarena.taskpack/v1
+id: official-failing-test-fix
+title: Official Failing Test Fix
+description: Repairs a failing test while preserving the surrounding test suite.
+metadata:
+  source: official
+  owner: RepoArena
+  objective: Measure whether an agent can isolate and repair a failing test case.
+  repoTypes:
+    - node
+    - test
+  tags:
+    - tests
+    - bugfix
+  dependencies:
+    - node
+  judgeRationale: Test commands and targeted fixture checks validate the actual bugfix path.
+prompt: |
+  Fix the failing test and keep the rest of the repository behavior intact.
+judges:
+  - id: test-command
+    type: command
+    label: Target test command passes
+    command: pnpm test -- --runInBand
+    timeoutMs: 120000
+  - id: package-manifest-exists
+    type: file-exists
+    label: Package manifest still exists
+    path: package.json
+

@@ -1,0 +1,32 @@
+schemaVersion: repoarena.taskpack/v1
+id: official-json-contract-repair
+title: Official JSON Contract Repair
+description: Repairs a JSON API contract using schema and value assertions.
+metadata:
+  source: official
+  owner: RepoArena
+  objective: Validate an agent's ability to repair structured JSON output under explicit contract checks.
+  repoTypes:
+    - api
+    - backend
+    - node
+  tags:
+    - json
+    - api
+    - contract
+  dependencies: []
+  judgeRationale: Combined schema and pointer checks capture both payload shape and business-critical values.
+prompt: |
+  Update the implementation so the JSON payload matches the required contract and expected values.
+judges:
+  - id: payload-schema
+    type: json-schema
+    label: Payload matches schema
+    path: fixtures/response.json
+    schemaPath: fixtures/response.schema.json
+  - id: payload-status
+    type: json-value
+    label: Payload status stays ready
+    path: fixtures/response.json
+    pointer: /status
+    expected: ready

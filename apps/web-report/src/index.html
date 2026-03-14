@@ -73,11 +73,17 @@
 
           <section id="metrics" class="metrics"></section>
 
+          <section id="run-verdicts" class="metrics"></section>
+
           <section class="detail-card">
             <div class="panel-header">
               <h3>Run Compare</h3>
             </div>
             <div class="filter-bar">
+              <select id="run-compare-scope">
+                <option value="current-task">Current Task Only</option>
+                <option value="all">All Tasks</option>
+              </select>
               <select id="run-compare-sort">
                 <option value="created">Created At (newest first)</option>
                 <option value="success">Success Rate (high to low)</option>
@@ -109,6 +115,7 @@
                 <option value="judges">Judge Pass Rate (high to low)</option>
               </select>
             </div>
+            <p id="compare-sort-hint" class="muted"></p>
             <div id="compare-table" class="compare-table-wrap"></div>
           </section>
 
@@ -139,7 +146,15 @@
               <h3>Markdown Summary</h3>
               <span id="markdown-status" class="muted">Not loaded</span>
             </div>
-            <div id="markdown-content" class="markdown-render"></div>
+            <div class="actions">
+              <button id="copy-share-card" type="button">Copy Summary</button>
+              <button id="copy-pr-table" type="button">Copy PR Table</button>
+            </div>
+            <p id="clipboard-status" class="muted"></p>
+            <div class="markdown-grid">
+              <div id="markdown-highlights" class="markdown-highlights"></div>
+              <div id="markdown-content" class="markdown-render"></div>
+            </div>
           </section>
         </section>
       </main>

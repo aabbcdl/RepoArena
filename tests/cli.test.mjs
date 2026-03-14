@@ -199,6 +199,7 @@ test("repoarena doctor supports JSON output", async () => {
   assert.equal(Array.isArray(payload), true);
   assert.equal(payload[0].agentId, "demo-fast");
   assert.equal(payload[0].status, "ready");
+  assert.equal(payload[0].capability.supportTier, "supported");
 });
 
 test("repoarena list-adapters supports JSON output", async () => {
@@ -208,6 +209,7 @@ test("repoarena list-adapters supports JSON output", async () => {
   const payload = JSON.parse(result.stdout);
   assert.equal(Array.isArray(payload), true);
   assert.equal(payload.some((adapter) => adapter.id === "demo-fast"), true);
+  assert.equal(payload.find((adapter) => adapter.id === "codex").capability.supportTier, "supported");
 });
 
 test("repoarena init-taskpack writes a starter YAML file", async () => {
@@ -275,6 +277,33 @@ test("repoarena run supports JSON output", async () => {
   assert.equal(payload.results[0].judges.passed, 1);
   assert.match(payload.report.jsonPath, /summary\.json$/);
   assert.match(payload.report.badgePath, /badge\.json$/);
+  assert.match(payload.report.prCommentPath, /pr-comment\.md$/);
+
+  await rm(tempDir, { recursive: true, force: true });
+});
+
+test("repoarena init-ci writes a benchmark workflow", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "repoarena-cli-"));
+  const workflowPath = path.join(tempDir, ".github", "workflows", "repoarena-benchmark.yml");
+
+  const result = await runCli(
+    [
+      "init-ci",
+      "--task",
+      "repoarena.taskpack.yaml",
+      "--agents",
+      "demo-fast,codex",
+      "--output",
+      workflowPath
+    ],
+    path.resolve(".")
+  );
+
+  assert.equal(result.code, 0);
+  const content = await readFile(workflowPath, "utf8");
+  assert.match(content, /name: RepoArena Benchmark/);
+  assert.match(content, /run --repo \. --task repoarena\.taskpack\.yaml --agents demo-fast,codex/);
+  assert.match(content, /pr-comment\.md/);
 
   await rm(tempDir, { recursive: true, force: true });
 });

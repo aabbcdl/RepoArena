@@ -9,6 +9,41 @@ interface BadgePayload {
   color: string;
 }
 
+function formatSupportTier(value: AdapterPreflightResult["capability"]["supportTier"]): string {
+  switch (value) {
+    case "supported":
+      return "supported";
+    case "experimental":
+      return "experimental";
+    case "blocked":
+      return "blocked";
+  }
+}
+
+function formatAvailability(
+  value: AdapterPreflightResult["capability"]["tokenAvailability"]
+): string {
+  switch (value) {
+    case "available":
+      return "available";
+    case "estimated":
+      return "estimated";
+    case "unavailable":
+      return "unavailable";
+  }
+}
+
+function formatTraceRichness(value: AdapterPreflightResult["capability"]["traceRichness"]): string {
+  switch (value) {
+    case "full":
+      return "full";
+    case "partial":
+      return "partial";
+    case "minimal":
+      return "minimal";
+  }
+}
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -223,6 +258,21 @@ function renderPreflights(run: BenchmarkRun): string {
         <section class="preflight ${statusTone(preflight.status)}">
           <h2>${escapeHtml(preflight.agentTitle)} <span>${escapeHtml(preflight.agentId)}</span></h2>
           <p><strong>${escapeHtml(preflight.status)}</strong> ${escapeHtml(preflight.summary)}</p>
+          <p class="meta">Support tier: ${escapeHtml(formatSupportTier(preflight.capability.supportTier))}</p>
+          <p class="meta">Invocation: ${escapeHtml(preflight.capability.invocationMethod)}</p>
+          <p class="meta">Tokens: ${escapeHtml(formatAvailability(preflight.capability.tokenAvailability))} | Cost: ${escapeHtml(
+            formatAvailability(preflight.capability.costAvailability)
+          )} | Trace: ${escapeHtml(formatTraceRichness(preflight.capability.traceRichness))}</p>
+          ${
+            preflight.capability.authPrerequisites.length > 0
+              ? `<p class="meta">Auth prerequisites: ${escapeHtml(preflight.capability.authPrerequisites.join("; "))}</p>`
+              : ""
+          }
+          ${
+            preflight.capability.knownLimitations.length > 0
+              ? `<p class="meta">Known limitations: ${escapeHtml(preflight.capability.knownLimitations.join("; "))}</p>`
+              : ""
+          }
           ${
             preflight.command
               ? `<p class="meta">Invocation: ${escapeHtml(preflight.command)}</p>`
@@ -432,6 +482,13 @@ function renderHtml(run: BenchmarkRun): string {
       </section>
       <footer>
         <p>Prompt: ${escapeHtml(run.task.prompt)}</p>
+        ${
+          run.task.metadata
+            ? `<p>Task library: ${escapeHtml(run.task.metadata.source)} by ${escapeHtml(run.task.metadata.owner)} | Repo types: ${escapeHtml(
+                run.task.metadata.repoTypes.join(", ")
+              )}</p>`
+            : ""
+        }
       </footer>
     </main>
   </body>
@@ -448,6 +505,12 @@ function renderMarkdown(run: BenchmarkRun): string {
     `- Created At: \`${run.createdAt}\``,
     `- Task: \`${run.task.title}\``,
     `- Repository: \`${run.repoPath}\``,
+    ...(run.task.metadata
+      ? [
+          `- Task Library: \`${run.task.metadata.source}\` by \`${run.task.metadata.owner}\``,
+          `- Repo Types: \`${run.task.metadata.repoTypes.join(", ") || "unspecified"}\``
+        ]
+      : []),
     `- Success Rate: \`${summary.successCount}/${summary.totalAgents}\``,
     `- Failed: \`${summary.failedCount}\``,
     `- Total Tokens: \`${summary.totalTokens}\` | Known Cost: \`$${summary.knownCostUsd.toFixed(2)}\``,
@@ -460,6 +523,20 @@ function renderMarkdown(run: BenchmarkRun): string {
   lines.push("| --- | --- | --- |");
   for (const preflight of run.preflights) {
     lines.push(`| ${preflight.agentId} | ${preflight.status} | ${preflight.summary.replaceAll("\n", " ")} |`);
+  }
+
+  lines.push("", "## Capability Matrix", "");
+  lines.push("| Agent | Tier | Invocation | Tokens | Cost | Trace |");
+  lines.push("| --- | --- | --- | --- | --- | --- |");
+  for (const preflight of run.preflights) {
+    lines.push(
+      `| ${preflight.agentId} | ${formatSupportTier(preflight.capability.supportTier)} | ${preflight.capability.invocationMethod.replaceAll("\n", " ")} | ${formatAvailability(preflight.capability.tokenAvailability)} | ${formatAvailability(preflight.capability.costAvailability)} | ${formatTraceRichness(preflight.capability.traceRichness)} |`
+    );
+    if (preflight.capability.knownLimitations.length > 0) {
+      lines.push(
+        `|  | limitations | ${preflight.capability.knownLimitations.join("; ").replaceAll("\n", " ")} |  |  |  |`
+      );
+    }
   }
 
   lines.push("", "## Results", "");
@@ -521,9 +598,46 @@ function renderMarkdown(run: BenchmarkRun): string {
   return lines.join("\n");
 }
 
+function renderPrComment(run: BenchmarkRun): string {
+  const failedResults = run.results.filter((result) => result.status !== "success");
+  const lines = [
+    "## RepoArena Benchmark",
+    "",
+    `Task: \`${run.task.title}\``,
+    "",
+    "| Agent | Tier | Preflight | Run | Duration | Tokens | Cost | Judges | Files |",
+    "| --- | --- | --- | --- | --- | ---: | --- | --- | ---: |"
+  ];
+
+  for (const result of run.results) {
+    const passedJudgeCount = result.judgeResults.filter((judge) => judge.success).length;
+    lines.push(
+      `| ${result.agentId} | ${formatSupportTier(result.preflight.capability.supportTier)} | ${result.preflight.status} | ${result.status} | ${formatDuration(result.durationMs)} | ${result.tokenUsage} | ${
+        result.costKnown ? `$${result.estimatedCostUsd.toFixed(2)}` : "n/a"
+      } | ${passedJudgeCount}/${result.judgeResults.length} | ${result.changedFiles.length} |`
+    );
+  }
+
+  if (failedResults.length > 0) {
+    lines.push("", "**Failures**");
+    for (const result of failedResults) {
+      lines.push(`- \`${result.agentId}\`: ${result.summary}`);
+    }
+  }
+
+  lines.push("", "**Artifacts**");
+  lines.push("- `summary.json`");
+  lines.push("- `summary.md`");
+  lines.push("- `pr-comment.md`");
+  lines.push("- `report.html`");
+  lines.push("- `badge.json`");
+
+  return lines.join("\n");
+}
+
 export async function writeReport(
   run: BenchmarkRun
-): Promise<{ htmlPath: string; jsonPath: string; markdownPath: string; badgePath: string }> {
+): Promise<{ htmlPath: string; jsonPath: string; markdownPath: string; badgePath: string; prCommentPath: string }> {
   await ensureDirectory(run.outputPath);
   const publicRun = sanitizeRun(run);
 
@@ -531,11 +645,13 @@ export async function writeReport(
   const htmlPath = path.join(run.outputPath, "report.html");
   const markdownPath = path.join(run.outputPath, "summary.md");
   const badgePath = path.join(run.outputPath, "badge.json");
+  const prCommentPath = path.join(run.outputPath, "pr-comment.md");
 
   await fs.writeFile(jsonPath, JSON.stringify(publicRun, null, 2), "utf8");
   await fs.writeFile(htmlPath, renderHtml(publicRun), "utf8");
   await fs.writeFile(markdownPath, renderMarkdown(publicRun), "utf8");
   await fs.writeFile(badgePath, JSON.stringify(buildBadgePayload(publicRun), null, 2), "utf8");
+  await fs.writeFile(prCommentPath, renderPrComment(publicRun), "utf8");
 
-  return { htmlPath, jsonPath, markdownPath, badgePath };
+  return { htmlPath, jsonPath, markdownPath, badgePath, prCommentPath };
 }

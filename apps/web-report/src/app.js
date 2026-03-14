@@ -1,3 +1,12 @@
+import {
+  buildPrTable,
+  buildShareCard,
+  getCompareResults,
+  getRunCompareRows,
+  getRunVerdict,
+  summarizeRun
+} from "./view-model.js";
+
 const state = {
   runs: [],
   run: null,
@@ -21,11 +30,14 @@ const elements = {
   taskTitle: document.querySelector("#task-title"),
   taskMeta: document.querySelector("#task-meta"),
   metrics: document.querySelector("#metrics"),
+  runVerdicts: document.querySelector("#run-verdicts"),
+  runCompareScope: document.querySelector("#run-compare-scope"),
   runCompareSort: document.querySelector("#run-compare-sort"),
   runCompareTable: document.querySelector("#run-compare-table"),
   preflights: document.querySelector("#preflights"),
   compareStatusFilter: document.querySelector("#compare-status-filter"),
   compareSort: document.querySelector("#compare-sort"),
+  compareSortHint: document.querySelector("#compare-sort-hint"),
   compareTable: document.querySelector("#compare-table"),
   resultSummary: document.querySelector("#result-summary"),
   resultDetails: document.querySelector("#result-details"),
@@ -34,7 +46,11 @@ const elements = {
   judgeStatusFilter: document.querySelector("#judge-status-filter"),
   markdownPanel: document.querySelector("#markdown-panel"),
   markdownStatus: document.querySelector("#markdown-status"),
+  markdownHighlights: document.querySelector("#markdown-highlights"),
   markdownContent: document.querySelector("#markdown-content"),
+  copyShareCard: document.querySelector("#copy-share-card"),
+  copyPrTable: document.querySelector("#copy-pr-table"),
+  clipboardStatus: document.querySelector("#clipboard-status"),
   expandAll: document.querySelector("#expand-all"),
   collapseAll: document.querySelector("#collapse-all")
 };
@@ -51,7 +67,8 @@ const compareFilters = {
 };
 
 const runCompareFilters = {
-  sort: "created"
+  sort: "created",
+  scope: "current-task"
 };
 
 function escapeHtml(value) {
@@ -178,72 +195,30 @@ function renderRunList() {
 }
 
 function renderMetrics(run) {
-  const successCount = run.results.filter((result) => result.status === "success").length;
-  const failedCount = run.results.length - successCount;
-  const totalTokens = run.results.reduce((total, result) => total + result.tokenUsage, 0);
-  const knownCost = run.results
-    .filter((result) => result.costKnown)
-    .reduce((total, result) => total + result.estimatedCostUsd, 0);
+  const summary = summarizeRun(run);
 
   elements.metrics.innerHTML = `
     <article class="metric">
       <p class="metric-label">Agents</p>
-      <p class="metric-value">${run.results.length}</p>
+      <p class="metric-value">${summary.totalAgents}</p>
     </article>
     <article class="metric">
       <p class="metric-label">Success</p>
-      <p class="metric-value">${successCount}</p>
+      <p class="metric-value">${summary.successCount}</p>
     </article>
     <article class="metric">
       <p class="metric-label">Failed</p>
-      <p class="metric-value">${failedCount}</p>
+      <p class="metric-value">${summary.failedCount}</p>
     </article>
     <article class="metric">
       <p class="metric-label">Tokens</p>
-      <p class="metric-value">${totalTokens}</p>
+      <p class="metric-value">${summary.totalTokens}</p>
     </article>
     <article class="metric">
       <p class="metric-label">Known Cost</p>
-      <p class="metric-value">$${knownCost.toFixed(2)}</p>
+      <p class="metric-value">$${summary.knownCost.toFixed(2)}</p>
     </article>
   `;
-}
-
-function summarizeRunForCompare(run) {
-  const successCount = run.results.filter((result) => result.status === "success").length;
-  const totalTokens = run.results.reduce((total, result) => total + result.tokenUsage, 0);
-  const knownCost = run.results
-    .filter((result) => result.costKnown)
-    .reduce((total, result) => total + result.estimatedCostUsd, 0);
-
-  return {
-    successCount,
-    totalAgents: run.results.length,
-    totalTokens,
-    knownCost
-  };
-}
-
-function getRunCompareRows() {
-  const rows = state.runs.map((run) => ({
-    run,
-    summary: summarizeRunForCompare(run)
-  }));
-
-  return rows.sort((left, right) => {
-    switch (runCompareFilters.sort) {
-      case "success":
-        return right.summary.successCount / Math.max(right.summary.totalAgents, 1) -
-          left.summary.successCount / Math.max(left.summary.totalAgents, 1);
-      case "tokens":
-        return right.summary.totalTokens - left.summary.totalTokens;
-      case "cost":
-        return left.summary.knownCost - right.summary.knownCost;
-      case "created":
-      default:
-        return right.run.createdAt.localeCompare(left.run.createdAt);
-    }
-  });
 }
 
 function renderRunCompareTable() {
@@ -252,7 +227,12 @@ function renderRunCompareTable() {
     return;
   }
 
-  const rows = getRunCompareRows();
+  const taskTitle = runCompareFilters.scope === "current-task" ? state.run?.task.title ?? null : null;
+  const rows = getRunCompareRows(state.runs, {
+    taskTitle,
+    sort: runCompareFilters.sort,
+    markdownByRunId: state.markdownByRunId
+  });
   elements.runCompareTable.innerHTML = `
     <table class="compare-table">
       <thead>
@@ -300,11 +280,68 @@ function renderPreflights(run) {
             <span class="status-badge ${statusClass(preflight.status)}">${escapeHtml(preflight.status)}</span>
           </div>
           <p>${escapeHtml(preflight.summary)}</p>
+          <p class="muted">Tier: ${escapeHtml(preflight.capability.supportTier)} | Trace: ${escapeHtml(
+            preflight.capability.traceRichness
+          )}</p>
+          <p class="muted">Invocation: ${escapeHtml(preflight.capability.invocationMethod)}</p>
+          <p class="muted">Tokens: ${escapeHtml(preflight.capability.tokenAvailability)} | Cost: ${escapeHtml(
+            preflight.capability.costAvailability
+          )}</p>
+          ${
+            preflight.capability.authPrerequisites.length > 0
+              ? `<p class="muted">Auth: ${escapeHtml(preflight.capability.authPrerequisites.join("; "))}</p>`
+              : ""
+          }
+          ${
+            preflight.capability.knownLimitations.length > 0
+              ? `<p class="muted">Limitations: ${escapeHtml(preflight.capability.knownLimitations.join("; "))}</p>`
+              : ""
+          }
           ${
             preflight.details?.length
               ? `<ul>${preflight.details.map((detail) => `<li>${escapeHtml(detail)}</li>`).join("")}</ul>`
               : ""
           }
+        </article>
+      `
+    )
+    .join("");
+}
+
+function renderVerdicts(run) {
+  const verdict = getRunVerdict(run);
+  const cards = [
+    {
+      label: "Best Agent",
+      value: verdict.bestAgent ? verdict.bestAgent.agentTitle : "n/a",
+      meta: verdict.bestAgent ? `${verdict.bestAgent.agentId} | ${verdict.bestAgent.status}` : "No result"
+    },
+    {
+      label: "Fastest",
+      value: verdict.fastest ? verdict.fastest.agentTitle : "n/a",
+      meta: verdict.fastest ? formatDuration(verdict.fastest.durationMs) : "No result"
+    },
+    {
+      label: "Lowest Known Cost",
+      value: verdict.lowestKnownCost ? verdict.lowestKnownCost.agentTitle : "n/a",
+      meta: verdict.lowestKnownCost ? formatCost(verdict.lowestKnownCost) : "No known cost"
+    },
+    {
+      label: "Highest Judge Pass Rate",
+      value: verdict.highestJudgePassRate ? verdict.highestJudgePassRate.agentTitle : "n/a",
+      meta: verdict.highestJudgePassRate
+        ? `${verdict.highestJudgePassRate.judgeResults.filter((judge) => judge.success).length}/${verdict.highestJudgePassRate.judgeResults.length}`
+        : "No result"
+    }
+  ];
+
+  elements.runVerdicts.innerHTML = cards
+    .map(
+      (card) => `
+        <article class="metric verdict-card">
+          <p class="metric-label">${escapeHtml(card.label)}</p>
+          <p class="metric-value">${escapeHtml(card.value)}</p>
+          <p class="muted">${escapeHtml(card.meta)}</p>
         </article>
       `
     )
@@ -334,60 +371,17 @@ function renderAgentList(run) {
     .join("");
 }
 
-function compareStatusRank(status) {
-  switch (status) {
-    case "success":
-      return 0;
-    case "failed":
-      return 1;
-    default:
-      return 2;
-  }
-}
-
-function compareJudgeRatio(result) {
-  if (result.judgeResults.length === 0) {
-    return 0;
-  }
-
-  return result.judgeResults.filter((judge) => judge.success).length / result.judgeResults.length;
-}
-
-function getCompareResults(run) {
-  const filteredResults = run.results.filter((result) => {
-    return compareFilters.status === "all" || result.status === compareFilters.status;
-  });
-
-  const sortedResults = [...filteredResults].sort((left, right) => {
-    switch (compareFilters.sort) {
-      case "duration":
-        return left.durationMs - right.durationMs;
-      case "tokens":
-        return right.tokenUsage - left.tokenUsage;
-      case "cost":
-        return (left.costKnown ? left.estimatedCostUsd : Number.POSITIVE_INFINITY) -
-          (right.costKnown ? right.estimatedCostUsd : Number.POSITIVE_INFINITY);
-      case "changed":
-        return right.changedFiles.length - left.changedFiles.length;
-      case "judges":
-        return compareJudgeRatio(right) - compareJudgeRatio(left);
-      case "status":
-      default: {
-        const statusDelta = compareStatusRank(left.status) - compareStatusRank(right.status);
-        if (statusDelta !== 0) {
-          return statusDelta;
-        }
-
-        return left.durationMs - right.durationMs;
-      }
-    }
-  });
-
-  return sortedResults;
-}
-
 function renderCompareTable(run) {
-  const results = getCompareResults(run);
+  const results = getCompareResults(run, compareFilters);
+  const sortHintMap = {
+    status: "Sorted by status, then fastest first.",
+    duration: "Sorted by fastest agents first.",
+    tokens: "Sorted by highest token usage first.",
+    cost: "Sorted by lowest known cost first.",
+    changed: "Sorted by most changed files first.",
+    judges: "Sorted by highest judge pass rate first."
+  };
+  elements.compareSortHint.textContent = sortHintMap[compareFilters.sort] ?? sortHintMap.status;
 
   if (results.length === 0) {
     elements.compareTable.innerHTML = `<p class="empty-state">No agents match the current compare filters.</p>`;
@@ -626,6 +620,14 @@ function renderMarkdownPanel() {
   elements.markdownStatus.textContent = state.run && state.markdownByRunId.has(state.run.runId)
     ? "Linked to selected run"
     : "Standalone markdown";
+  elements.markdownHighlights.innerHTML = state.run
+    ? `
+        <section class="detail-card">
+          <h4>Highlights</h4>
+          <pre>${escapeHtml(buildShareCard(state.run))}</pre>
+        </section>
+      `
+    : `<p class="empty-state">Load a run to see summary highlights.</p>`;
   elements.markdownContent.innerHTML = renderMarkdownBlock(markdown);
 }
 
@@ -683,6 +685,7 @@ function renderDashboard(run) {
 
   renderRunInfo(run);
   renderMetrics(run);
+  renderVerdicts(run);
   renderRunCompareTable();
   renderPreflights(run);
   renderAgentList(run);
@@ -702,6 +705,7 @@ function render() {
     elements.agentCount.textContent = "0";
     elements.agentList.className = "agent-list empty-state";
     elements.agentList.textContent = "No report loaded.";
+    elements.runVerdicts.innerHTML = "";
     elements.runCompareTable.innerHTML = "";
     renderMarkdownPanel();
     return;
@@ -732,6 +736,16 @@ async function handleMarkdownSelection(event) {
 
   state.standaloneMarkdown = await file.text();
   renderMarkdownPanel();
+}
+
+async function copyToClipboard(value, label) {
+  try {
+    await navigator.clipboard.writeText(value);
+    elements.clipboardStatus.textContent = `${label} copied.`;
+  } catch (error) {
+    elements.clipboardStatus.textContent = `Failed to copy ${label.toLowerCase()}.`;
+    console.error(error);
+  }
 }
 
 function folderOf(file) {
@@ -861,4 +875,25 @@ elements.compareSort.addEventListener("change", (event) => {
 elements.runCompareSort.addEventListener("change", (event) => {
   runCompareFilters.sort = String(event.target.value ?? "created");
   renderRunCompareTable();
+});
+
+elements.runCompareScope.addEventListener("change", (event) => {
+  runCompareFilters.scope = String(event.target.value ?? "current-task");
+  renderRunCompareTable();
+});
+
+elements.copyShareCard.addEventListener("click", async () => {
+  if (!state.run) {
+    return;
+  }
+
+  await copyToClipboard(buildShareCard(state.run), "Summary");
+});
+
+elements.copyPrTable.addEventListener("click", async () => {
+  if (!state.run) {
+    return;
+  }
+
+  await copyToClipboard(buildPrTable(state.run), "PR table");
 });

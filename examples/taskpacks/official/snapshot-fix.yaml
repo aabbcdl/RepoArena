@@ -1,0 +1,27 @@
+schemaVersion: repoarena.taskpack/v1
+id: official-snapshot-fix
+title: Official Snapshot Fix
+description: Brings generated output back in sync with a stored snapshot.
+metadata:
+  source: official
+  owner: RepoArena
+  objective: Evaluate whether an agent can repair snapshot regressions with minimal collateral changes.
+  repoTypes:
+    - frontend
+    - test
+    - node
+  tags:
+    - snapshot
+    - regression
+  dependencies:
+    - node
+  judgeRationale: Snapshot comparison is the clearest correctness signal when output must match a stored fixture.
+prompt: |
+  Update the implementation so generated output matches the stored snapshot fixture.
+judges:
+  - id: snapshot-check
+    type: snapshot
+    label: Output matches snapshot
+    path: fixtures/actual.txt
+    snapshotPath: fixtures/expected.txt
+

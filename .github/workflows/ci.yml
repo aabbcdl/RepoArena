@@ -66,7 +66,7 @@ jobs:
         run: node packages/cli/dist/index.js run --repo . --task examples/taskpacks/demo-repo-health.json --agents demo-fast --output .repoarena/ci-smoke
 
       - name: Publish smoke summary
-        run: cat .repoarena/ci-smoke/summary.md >> "$GITHUB_STEP_SUMMARY"
+        run: cat .repoarena/ci-smoke/pr-comment.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Comment smoke summary on PR
         if: github.event_name == 'pull_request'
@@ -74,10 +74,10 @@ jobs:
         with:
           script: |
             const fs = require("node:fs");
-            const summaryPath = ".repoarena/ci-smoke/summary.md";
+            const summaryPath = ".repoarena/ci-smoke/pr-comment.md";
             const marker = "<!-- repoarena-smoke-summary -->";
             const summary = fs.readFileSync(summaryPath, "utf8");
-            const body = `${marker}\n## RepoArena Smoke Benchmark\n\n${summary}`;
+            const body = `${marker}\n${summary}`;
             const issue_number = context.payload.pull_request.number;
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
@@ -110,4 +110,5 @@ jobs:
             .repoarena/ci-smoke/badge.json
             .repoarena/ci-smoke/summary.json
             .repoarena/ci-smoke/summary.md
+            .repoarena/ci-smoke/pr-comment.md
             .repoarena/ci-smoke/report.html

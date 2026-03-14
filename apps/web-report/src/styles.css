@@ -237,7 +237,7 @@ input {
 
 .filter-bar {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 180px 180px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
 }
 
@@ -288,6 +288,13 @@ input {
 
 .compare-table code {
   font-size: 0.86rem;
+}
+
+.verdict-card {
+  border-color: rgba(159, 69, 37, 0.24);
+  background:
+    linear-gradient(180deg, rgba(159, 69, 37, 0.06), rgba(159, 69, 37, 0.02)),
+    var(--paper);
 }
 
 .metric {
@@ -382,6 +389,23 @@ input {
 }
 
 .markdown-render pre {
+  margin: 0;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  border-radius: 14px;
+  padding: 16px;
+  background: var(--paper-2);
+  border: 1px solid var(--border);
+}
+
+.markdown-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) 1fr;
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.markdown-highlights pre {
   margin: 0;
   overflow-x: auto;
   white-space: pre-wrap;
@@ -487,6 +511,10 @@ input {
   }
 
   .filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .markdown-grid {
     grid-template-columns: 1fr;
   }
 }

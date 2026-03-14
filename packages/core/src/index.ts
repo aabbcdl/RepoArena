@@ -90,12 +90,23 @@ export type TaskJudge =
   | SnapshotJudge
   | JsonSchemaJudge;
 
+export interface TaskPackMetadata {
+  source: "official" | "community";
+  owner: string;
+  objective?: string;
+  repoTypes: string[];
+  tags: string[];
+  dependencies: string[];
+  judgeRationale?: string;
+}
+
 export interface TaskPack {
   schemaVersion: typeof TASK_PACK_SCHEMA_V1;
   id: string;
   title: string;
   description?: string;
   prompt: string;
+  metadata?: TaskPackMetadata;
   envAllowList: string[];
   setupCommands: CommandExecutionSpec[];
   judges: TaskJudge[];
@@ -129,6 +140,19 @@ export interface AdapterExecutionResult {
 }
 
 export type AdapterPreflightStatus = "ready" | "unverified" | "blocked" | "missing";
+export type AdapterSupportTier = "supported" | "experimental" | "blocked";
+export type AdapterMetricAvailability = "available" | "estimated" | "unavailable";
+export type AdapterTraceRichness = "full" | "partial" | "minimal";
+
+export interface AdapterCapability {
+  supportTier: AdapterSupportTier;
+  invocationMethod: string;
+  authPrerequisites: string[];
+  tokenAvailability: AdapterMetricAvailability;
+  costAvailability: AdapterMetricAvailability;
+  traceRichness: AdapterTraceRichness;
+  knownLimitations: string[];
+}
 
 export interface AdapterPreflightOptions {
   probeAuth?: boolean;
@@ -140,6 +164,7 @@ export interface AdapterPreflightResult {
   adapterKind: "demo" | "external";
   status: AdapterPreflightStatus;
   summary: string;
+  capability: AdapterCapability;
   command?: string;
   details?: string[];
 }
@@ -148,6 +173,7 @@ export interface AgentAdapter {
   id: string;
   title: string;
   kind: "demo" | "external";
+  capability: AdapterCapability;
   preflight(options?: AdapterPreflightOptions): Promise<AdapterPreflightResult>;
   execute(context: AdapterExecutionContext): Promise<AdapterExecutionResult>;
 }

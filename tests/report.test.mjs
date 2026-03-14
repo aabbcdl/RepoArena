@@ -5,6 +5,16 @@ import os from "node:os";
 import path from "node:path";
 import { writeReport } from "../packages/report/dist/index.js";
 
+const demoCapability = {
+  supportTier: "supported",
+  invocationMethod: "Built-in RepoArena demo adapter",
+  authPrerequisites: [],
+  tokenAvailability: "estimated",
+  costAvailability: "estimated",
+  traceRichness: "partial",
+  knownLimitations: ["Synthetic metrics"]
+};
+
 test("writeReport sanitizes shareable output paths", async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "repoarena-report-"));
   const outputPath = path.join(tempDir, "run-output");
@@ -31,6 +41,7 @@ test("writeReport sanitizes shareable output paths", async () => {
         adapterKind: "demo",
         status: "ready",
         summary: "Ready",
+        capability: demoCapability,
         command: "codex"
       }
     ],
@@ -44,6 +55,7 @@ test("writeReport sanitizes shareable output paths", async () => {
           agentTitle: "Demo Fast",
           adapterKind: "demo",
           status: "ready",
+          capability: demoCapability,
           summary: "Ready",
           command: "codex"
         },
@@ -83,10 +95,11 @@ test("writeReport sanitizes shareable output paths", async () => {
     ]
   };
 
-  const { jsonPath, markdownPath, badgePath } = await writeReport(benchmarkRun);
+  const { jsonPath, markdownPath, badgePath, prCommentPath } = await writeReport(benchmarkRun);
   const summary = JSON.parse(await readFile(jsonPath, "utf8"));
   const markdown = await readFile(markdownPath, "utf8");
   const badge = JSON.parse(await readFile(badgePath, "utf8"));
+  const prComment = await readFile(prCommentPath, "utf8");
 
   assert.equal(summary.repoPath, ".");
   assert.equal(summary.outputPath, ".");
@@ -98,12 +111,15 @@ test("writeReport sanitizes shareable output paths", async () => {
   assert.match(markdown, /# RepoArena Summary/);
   assert.match(markdown, /- Success Rate: `1\/1`/);
   assert.match(markdown, /- Badge Endpoint: `badge\.json`/);
+  assert.match(markdown, /## Capability Matrix/);
   assert.match(markdown, /\| Agent \| Status \| Duration \| Tokens \| Cost \| Changed Files \| Judges \|/);
   assert.match(markdown, /`run\/agents\/demo-fast\/trace\.jsonl`/);
   assert.match(markdown, /target=README\.md/);
   assert.doesNotMatch(markdown, /C:\\temp\\workspace/);
   assert.equal(badge.label, "RepoArena");
   assert.equal(badge.message, "1/1 passing");
+  assert.match(prComment, /## RepoArena Benchmark/);
+  assert.match(prComment, /\| Agent \| Tier \| Preflight \| Run \| Duration \| Tokens \| Cost \| Judges \| Files \|/);
 
   await rm(tempDir, { recursive: true, force: true });
 });
@@ -138,6 +154,7 @@ test("writeReport includes a failure summary section for failed agents", async (
           agentTitle: "Demo Fail",
           adapterKind: "demo",
           status: "ready",
+          capability: demoCapability,
           summary: "Ready"
         },
         status: "failed",
