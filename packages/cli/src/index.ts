@@ -13,6 +13,7 @@ interface ParsedArgs {
   outputPath?: string;
   probeAuth: boolean;
   strict: boolean;
+  updateSnapshots: boolean;
   maxConcurrency?: number;
 }
 
@@ -20,12 +21,13 @@ function printHelp(): void {
   console.log(`RepoArena CLI
 
 Usage:
-  repoarena run --repo <path> --task <task.json> --agents <comma,separated> [--probe-auth] [--max-concurrency <n>]
+  repoarena run --repo <path> --task <task.json> --agents <comma,separated> [--probe-auth] [--update-snapshots] [--max-concurrency <n>]
   repoarena doctor [--agents <comma,separated>] [--probe-auth] [--strict]
 
 Examples:
   repoarena run --repo . --task examples/taskpacks/demo-repo-health.json --agents demo-fast,demo-thorough
   repoarena run --repo . --task examples/taskpacks/demo-repo-health.json --agents codex,claude-code --probe-auth
+  repoarena run --repo . --task examples/taskpacks/demo-repo-health.yaml --agents demo-fast --update-snapshots
   repoarena doctor --agents codex,claude-code,cursor --probe-auth
   repoarena doctor --agents codex,claude-code,cursor --probe-auth --strict
 `);
@@ -35,7 +37,8 @@ function parseArgs(argv: string[]): ParsedArgs {
   const parsed: ParsedArgs = {
     agentIds: [],
     probeAuth: false,
-    strict: false
+    strict: false,
+    updateSnapshots: false
   };
 
   const args = [...argv];
@@ -69,6 +72,9 @@ function parseArgs(argv: string[]): ParsedArgs {
         break;
       case "--strict":
         parsed.strict = true;
+        break;
+      case "--update-snapshots":
+        parsed.updateSnapshots = true;
         break;
       case "--max-concurrency": {
         const value = Number.parseInt(args.shift() ?? "", 10);
@@ -133,6 +139,7 @@ async function runBenchmarkCommand(parsed: ParsedArgs): Promise<void> {
     agentIds: parsed.agentIds,
     outputPath: parsed.outputPath ? path.resolve(parsed.outputPath) : undefined,
     probeAuth: parsed.probeAuth,
+    updateSnapshots: parsed.updateSnapshots,
     maxConcurrency: parsed.maxConcurrency
   });
 

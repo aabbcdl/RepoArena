@@ -13,7 +13,6 @@ Task packs use a versioned schema. The current format is `repoarena.taskpack/v1`
 - Runs multiple coding agents against the same task pack
 - Records traces and file changes in isolated workspaces
 - Evaluates outcomes with shared checks
-- Exports JSON and HTML reports
 - Exports JSON, Markdown, and HTML reports
 - Surfaces environment and authentication blockers before a benchmark starts
 
@@ -50,6 +49,12 @@ Fail fast when any requested adapter is not fully ready:
 
 ```bash
 node packages/cli/dist/index.js doctor --agents codex,claude-code,cursor --probe-auth --strict
+```
+
+Update snapshot fixtures during a benchmark run:
+
+```bash
+node packages/cli/dist/index.js run --repo . --task examples/taskpacks/demo-repo-health.yaml --agents demo-fast --update-snapshots
 ```
 
 Run the Codex adapter:

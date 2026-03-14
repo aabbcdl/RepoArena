@@ -22,6 +22,10 @@ import {
 
 const DEFAULT_JUDGE_TIMEOUT_MS = 5 * 60 * 1_000;
 
+export interface JudgeExecutionOptions {
+  updateSnapshots?: boolean;
+}
+
 function resolveTimeoutMs(value: string | undefined, fallbackMs: number): number {
   const parsed = Number.parseInt(value ?? "", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackMs;
@@ -438,7 +442,11 @@ async function runFileCountJudge(judge: FileCountJudge, workspacePath: string): 
   }
 }
 
-async function runSnapshotJudge(judge: SnapshotJudge, workspacePath: string): Promise<JudgeResult> {
+async function runSnapshotJudgeWithOptions(
+  judge: SnapshotJudge,
+  workspacePath: string,
+  options: JudgeExecutionOptions
+): Promise<JudgeResult> {
   const startedAt = Date.now();
   const targetPath = resolveWorkspacePath(workspacePath, judge.path, `Judge "${judge.id}" path`);
   const snapshotPath = resolveWorkspacePath(
@@ -454,7 +462,12 @@ async function runSnapshotJudge(judge: SnapshotJudge, workspacePath: string): Pr
     ]);
     const normalizedActual = actual.replaceAll("\r\n", "\n");
     const normalizedExpected = expected.replaceAll("\r\n", "\n");
-    const success = normalizedActual === normalizedExpected;
+    let success = normalizedActual === normalizedExpected;
+
+    if (!success && options.updateSnapshots) {
+      await fs.writeFile(snapshotPath, actual, "utf8");
+      success = true;
+    }
 
     return {
       judgeId: judge.id,
@@ -464,7 +477,11 @@ async function runSnapshotJudge(judge: SnapshotJudge, workspacePath: string): Pr
       expectation: `matches ${judge.snapshotPath}`,
       exitCode: success ? 0 : 1,
       success,
-      stdout: success ? `Snapshot matched ${judge.snapshotPath}.` : "",
+      stdout: success
+        ? normalizedActual === normalizedExpected
+          ? `Snapshot matched ${judge.snapshotPath}.`
+          : `Updated snapshot ${judge.snapshotPath} from ${judge.path}.`
+        : "",
       stderr: success ? "" : `Snapshot mismatch for "${judge.path}" against "${judge.snapshotPath}".`,
       durationMs: Date.now() - startedAt
     };
@@ -535,7 +552,8 @@ async function runJsonSchemaJudge(judge: JsonSchemaJudge, workspacePath: string)
 export async function runJudge(
   judge: TaskJudge,
   workspacePath: string,
-  baseAllowedNames: string[]
+  baseAllowedNames: string[],
+  options: JudgeExecutionOptions = {}
 ): Promise<JudgeResult> {
   switch (judge.type) {
     case "command":
@@ -551,7 +569,7 @@ export async function runJudge(
     case "file-count":
       return await runFileCountJudge(judge, workspacePath);
     case "snapshot":
-      return await runSnapshotJudge(judge, workspacePath);
+      return await runSnapshotJudgeWithOptions(judge, workspacePath, options);
     case "json-schema":
       return await runJsonSchemaJudge(judge, workspacePath);
   }
@@ -560,10 +578,11 @@ export async function runJudge(
 export async function runJudges(
   judges: TaskJudge[],
   workspacePath: string,
-  baseAllowedNames: string[]
+  baseAllowedNames: string[],
+  options: JudgeExecutionOptions = {}
 ): Promise<JudgeResult[]> {
   return await Promise.all(
-    judges.map(async (judge) => await runJudge(judge, workspacePath, baseAllowedNames))
+    judges.map(async (judge) => await runJudge(judge, workspacePath, baseAllowedNames, options))
   );
 }
 

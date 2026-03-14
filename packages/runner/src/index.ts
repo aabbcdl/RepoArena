@@ -26,6 +26,7 @@ export interface BenchmarkOptions {
   outputPath?: string;
   probeAuth?: boolean;
   maxConcurrency?: number;
+  updateSnapshots?: boolean;
 }
 
 const DEFAULT_AGENT_CONCURRENCY = 1;
@@ -113,7 +114,8 @@ async function runAgent(
   outputPath: string,
   workspaceRootPath: string,
   taskPath: string,
-  preflight: AdapterPreflightResult
+  preflight: AdapterPreflightResult,
+  options: Pick<BenchmarkOptions, "updateSnapshots">
 ): Promise<AgentRunResult> {
   const task = await loadTaskPack(taskPath);
   const adapter = getAdapter(preflight.agentId);
@@ -233,7 +235,9 @@ async function runAgent(
       }
     });
 
-    const judgeResults = await runJudges(task.judges, workspacePath, task.envAllowList);
+    const judgeResults = await runJudges(task.judges, workspacePath, task.envAllowList, {
+      updateSnapshots: options.updateSnapshots
+    });
 
     const afterSnapshot = await snapshotDirectory(workspacePath);
     const diff = diffSnapshots(beforeSnapshot, afterSnapshot);
@@ -372,7 +376,10 @@ export async function runBenchmark(options: BenchmarkOptions): Promise<Benchmark
   const results = await mapWithConcurrency(
     preflights,
     agentConcurrency(options),
-    async (preflight) => await runAgent(repoPath, outputPath, workspaceRootPath, options.taskPath, preflight)
+    async (preflight) =>
+      await runAgent(repoPath, outputPath, workspaceRootPath, options.taskPath, preflight, {
+        updateSnapshots: options.updateSnapshots
+      })
   );
 
   return {

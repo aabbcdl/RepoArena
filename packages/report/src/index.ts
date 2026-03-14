@@ -389,6 +389,7 @@ function renderHtml(run: BenchmarkRun): string {
 }
 
 function renderMarkdown(run: BenchmarkRun): string {
+  const failedResults = run.results.filter((result) => result.status !== "success");
   const lines: string[] = [
     "# RepoArena Summary",
     "",
@@ -407,14 +408,30 @@ function renderMarkdown(run: BenchmarkRun): string {
   }
 
   lines.push("", "## Results", "");
-  lines.push("| Agent | Status | Duration | Tokens | Cost | Changed Files |");
-  lines.push("| --- | --- | --- | ---: | --- | ---: |");
+  lines.push("| Agent | Status | Duration | Tokens | Cost | Changed Files | Judges |");
+  lines.push("| --- | --- | --- | ---: | --- | ---: | --- |");
   for (const result of run.results) {
+    const passedJudgeCount = result.judgeResults.filter((judge) => judge.success).length;
     lines.push(
       `| ${result.agentId} | ${result.status} | ${formatDuration(result.durationMs)} | ${result.tokenUsage} | ${
         result.costKnown ? `$${result.estimatedCostUsd.toFixed(2)}` : "n/a"
-      } | ${result.changedFiles.length} |`
+      } | ${result.changedFiles.length} | ${passedJudgeCount}/${result.judgeResults.length} |`
     );
+  }
+
+  if (failedResults.length > 0) {
+    lines.push("", "## Failures", "");
+    for (const result of failedResults) {
+      lines.push(`- \`${result.agentId}\`: ${result.summary}`);
+      const failedJudges = result.judgeResults.filter((judge) => !judge.success);
+      for (const judge of failedJudges) {
+        lines.push(
+          `  - judge \`${judge.label}\` (${judge.type})${judge.target ? ` target=${judge.target}` : ""}${
+            judge.expectation ? ` expect=${judge.expectation}` : ""
+          }`
+        );
+      }
+    }
   }
 
   for (const result of run.results) {

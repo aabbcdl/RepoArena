@@ -136,3 +136,57 @@ test("repoarena doctor exits with code 1 in strict mode when any adapter is not 
   assert.match(result.stdout, /- cursor/);
   assert.match(result.stdout, /status=missing|status=blocked|status=unverified/);
 });
+
+test("repoarena run can update snapshots from the CLI", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "repoarena-cli-"));
+  const repoPath = path.join(tempDir, "repo");
+  const outputPath = path.join(tempDir, "output-update");
+  const taskPath = path.join(tempDir, "task-update.json");
+
+  await mkdir(repoPath, { recursive: true });
+  await writeFile(path.join(repoPath, "README.md"), "# Temp Repo\n", "utf8");
+
+  await writeJson(taskPath, {
+    schemaVersion: "repoarena.taskpack/v1",
+    id: "cli-update-snapshot",
+    title: "CLI Update Snapshot",
+    prompt: "Update snapshot",
+    setupCommands: [
+      {
+        label: "Prepare snapshot files",
+        command:
+          "node -e \"const fs=require('node:fs');fs.mkdirSync('fixtures',{recursive:true});fs.writeFileSync('fixtures/actual.txt','after\\n');fs.writeFileSync('fixtures/expected.txt','before\\n');\""
+      }
+    ],
+    judges: [
+      {
+        id: "snapshot-check",
+        type: "snapshot",
+        label: "Snapshot updates",
+        path: "fixtures/actual.txt",
+        snapshotPath: "fixtures/expected.txt"
+      }
+    ]
+  });
+
+  const result = await runCli(
+    [
+      "run",
+      "--repo",
+      repoPath,
+      "--task",
+      taskPath,
+      "--agents",
+      "demo-fast",
+      "--output",
+      outputPath,
+      "--update-snapshots"
+    ],
+    path.resolve(".")
+  );
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /status=success/);
+
+  await rm(tempDir, { recursive: true, force: true });
+});

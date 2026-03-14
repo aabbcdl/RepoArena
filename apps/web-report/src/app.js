@@ -24,11 +24,20 @@ const elements = {
   preflights: document.querySelector("#preflights"),
   resultSummary: document.querySelector("#result-summary"),
   resultDetails: document.querySelector("#result-details"),
+  judgeSearch: document.querySelector("#judge-search"),
+  judgeTypeFilter: document.querySelector("#judge-type-filter"),
+  judgeStatusFilter: document.querySelector("#judge-status-filter"),
   markdownPanel: document.querySelector("#markdown-panel"),
   markdownStatus: document.querySelector("#markdown-status"),
   markdownContent: document.querySelector("#markdown-content"),
   expandAll: document.querySelector("#expand-all"),
   collapseAll: document.querySelector("#collapse-all")
+};
+
+const judgeFilters = {
+  search: "",
+  type: "all",
+  status: "all"
 };
 
 function escapeHtml(value) {
@@ -267,6 +276,19 @@ function renderStepCards(title, steps) {
 
 function renderJudgeCards(result) {
   const judges = result.judgeResults;
+  const filteredJudges = judges.filter((judge) => {
+    const matchesType = judgeFilters.type === "all" || judge.type === judgeFilters.type;
+    const matchesStatus =
+      judgeFilters.status === "all" ||
+      (judgeFilters.status === "pass" ? judge.success : !judge.success);
+    const haystack = [judge.label, judge.target ?? "", judge.expectation ?? "", judge.command ?? ""]
+      .join(" ")
+      .toLowerCase();
+    const matchesSearch = judgeFilters.search === "" || haystack.includes(judgeFilters.search);
+
+    return matchesType && matchesStatus && matchesSearch;
+  });
+
   const byType = judges.reduce((map, judge) => {
     map.set(judge.type, (map.get(judge.type) ?? 0) + 1);
     return map;
@@ -291,9 +313,9 @@ function renderJudgeCards(result) {
       `;
 
   const content =
-    judges.length === 0
+    filteredJudges.length === 0
       ? ""
-      : `<div class="step-list">${judges
+      : `<div class="step-list">${filteredJudges
           .map(
             (judge) => `
               <details class="step-card judge-card">
@@ -340,7 +362,24 @@ function renderJudgeCards(result) {
           )
           .join("")}</div>`;
 
-  return `<section class="detail-card"><h3>Judges</h3>${overview}${content}</section>`;
+  return `<section class="detail-card"><h3>Judges</h3>${overview}${
+    filteredJudges.length === 0 && judges.length > 0
+      ? `<p class="empty-state">No judges match the current filters.</p>`
+      : content
+  }</section>`;
+}
+
+function populateJudgeFilters(run) {
+  const judgeTypes = Array.from(
+    new Set(run.results.flatMap((result) => result.judgeResults.map((judge) => judge.type)))
+  ).sort();
+
+  const currentType = judgeFilters.type;
+  elements.judgeTypeFilter.innerHTML = [
+    `<option value="all">All Types</option>`,
+    ...judgeTypes.map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(formatJudgeType(type))}</option>`)
+  ].join("");
+  elements.judgeTypeFilter.value = judgeTypes.includes(currentType) ? currentType : "all";
 }
 
 function renderDiff(result) {
@@ -454,6 +493,7 @@ function renderDashboard(run) {
   renderMetrics(run);
   renderPreflights(run);
   renderAgentList(run);
+  populateJudgeFilters(run);
   renderSelectedAgent();
   renderMarkdownPanel();
 }
@@ -568,4 +608,19 @@ elements.collapseAll.addEventListener("click", () => {
   document.querySelectorAll("details").forEach((element) => {
     element.open = false;
   });
+});
+
+elements.judgeSearch.addEventListener("input", (event) => {
+  judgeFilters.search = String(event.target.value ?? "").trim().toLowerCase();
+  renderSelectedAgent();
+});
+
+elements.judgeTypeFilter.addEventListener("change", (event) => {
+  judgeFilters.type = String(event.target.value ?? "all");
+  renderSelectedAgent();
+});
+
+elements.judgeStatusFilter.addEventListener("change", (event) => {
+  judgeFilters.status = String(event.target.value ?? "all");
+  renderSelectedAgent();
 });

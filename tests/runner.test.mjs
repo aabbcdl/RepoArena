@@ -359,3 +359,53 @@ test("runBenchmark supports snapshot and json-schema judges", async () => {
 
   await rm(tempDir, { recursive: true, force: true });
 });
+
+test("runBenchmark can update snapshot files when enabled", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "repoarena-runner-"));
+  const repoPath = path.join(tempDir, "repo");
+  const outputPath = path.join(tempDir, "output");
+  const taskPath = path.join(tempDir, "task.json");
+
+  await mkdir(repoPath, { recursive: true });
+  await writeFile(path.join(repoPath, "README.md"), "# Temp Repo\n", "utf8");
+  await writeJson(path.join(repoPath, "package.json"), { name: "temp-repo", version: "0.0.0" });
+
+  await writeJson(taskPath, {
+    schemaVersion: "repoarena.taskpack/v1",
+    id: "update-snapshot",
+    title: "Update Snapshot",
+    prompt: "Refresh snapshot fixture.",
+    setupCommands: [
+      {
+        label: "Prepare mismatched snapshot",
+        command:
+          "node -e \"const fs=require('node:fs');fs.mkdirSync('fixtures',{recursive:true});fs.writeFileSync('fixtures/actual.txt','new value\\n');fs.writeFileSync('fixtures/expected.txt','old value\\n');\""
+      }
+    ],
+    judges: [
+      {
+        id: "snapshot-check",
+        type: "snapshot",
+        label: "Snapshot can be updated",
+        path: "fixtures/actual.txt",
+        snapshotPath: "fixtures/expected.txt"
+      }
+    ]
+  });
+
+  const benchmark = await runBenchmark({
+    repoPath,
+    taskPath,
+    agentIds: ["demo-fast"],
+    outputPath,
+    updateSnapshots: true
+  });
+
+  assert.equal(benchmark.results[0].status, "success");
+  assert.match(benchmark.results[0].judgeResults[0].stdout, /Updated snapshot/);
+  const workspaceRoot = benchmark.results[0].workspacePath;
+  const updatedSnapshot = await readFile(path.join(workspaceRoot, "fixtures", "expected.txt"), "utf8");
+  assert.equal(updatedSnapshot, "new value\n");
+
+  await rm(tempDir, { recursive: true, force: true });
+});

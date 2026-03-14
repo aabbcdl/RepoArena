@@ -235,6 +235,21 @@ input {
   margin-top: 24px;
 }
 
+.filter-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 180px 180px;
+  gap: 12px;
+}
+
+.filter-bar input,
+.filter-bar select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--paper);
+  padding: 10px 12px;
+}
+
 .metric {
   padding: 18px;
 }
@@ -428,6 +443,10 @@ input {
   }
 
   .result-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-bar {
     grid-template-columns: 1fr;
   }
 }

@@ -79,6 +79,23 @@
             <div id="result-details" class="result-details"></div>
           </section>
 
+          <section class="detail-card">
+            <div class="panel-header">
+              <h3>Judge Filters</h3>
+            </div>
+            <div class="filter-bar">
+              <input id="judge-search" type="search" placeholder="Search label, target, expectation" />
+              <select id="judge-type-filter">
+                <option value="all">All Types</option>
+              </select>
+              <select id="judge-status-filter">
+                <option value="all">All Statuses</option>
+                <option value="pass">Pass</option>
+                <option value="fail">Fail</option>
+              </select>
+            </div>
+          </section>
+
           <section id="markdown-panel" class="detail-card hidden">
             <div class="panel-header">
               <h3>Markdown Summary</h3>
