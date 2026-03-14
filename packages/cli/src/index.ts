@@ -12,6 +12,7 @@ interface ParsedArgs {
   agentIds: string[];
   outputPath?: string;
   probeAuth: boolean;
+  strict: boolean;
   maxConcurrency?: number;
 }
 
@@ -20,19 +21,21 @@ function printHelp(): void {
 
 Usage:
   repoarena run --repo <path> --task <task.json> --agents <comma,separated> [--probe-auth] [--max-concurrency <n>]
-  repoarena doctor [--agents <comma,separated>] [--probe-auth]
+  repoarena doctor [--agents <comma,separated>] [--probe-auth] [--strict]
 
 Examples:
   repoarena run --repo . --task examples/taskpacks/demo-repo-health.json --agents demo-fast,demo-thorough
   repoarena run --repo . --task examples/taskpacks/demo-repo-health.json --agents codex,claude-code --probe-auth
   repoarena doctor --agents codex,claude-code,cursor --probe-auth
+  repoarena doctor --agents codex,claude-code,cursor --probe-auth --strict
 `);
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
   const parsed: ParsedArgs = {
     agentIds: [],
-    probeAuth: false
+    probeAuth: false,
+    strict: false
   };
 
   const args = [...argv];
@@ -63,6 +66,9 @@ function parseArgs(argv: string[]): ParsedArgs {
         break;
       case "--probe-auth":
         parsed.probeAuth = true;
+        break;
+      case "--strict":
+        parsed.strict = true;
         break;
       case "--max-concurrency": {
         const value = Number.parseInt(args.shift() ?? "", 10);
@@ -109,6 +115,10 @@ async function runDoctor(parsed: ParsedArgs): Promise<void> {
     for (const detail of preflight.details ?? []) {
       console.log(`  detail: ${detail}`);
     }
+  }
+
+  if (parsed.strict && preflights.some((preflight) => preflight.status !== "ready")) {
+    process.exitCode = 1;
   }
 }
 

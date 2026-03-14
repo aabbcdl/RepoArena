@@ -42,6 +42,12 @@ Check adapter readiness:
 pnpm doctor
 ```
 
+Fail fast when any requested adapter is not fully ready:
+
+```bash
+node packages/cli/dist/index.js doctor --agents codex,claude-code,cursor --probe-auth --strict
+```
+
 Run the Codex adapter:
 
 ```bash

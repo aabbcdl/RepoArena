@@ -9,13 +9,17 @@ async function writeJson(filePath, value) {
   await writeFile(filePath, JSON.stringify(value, null, 2), "utf8");
 }
 
-async function runCli(args, cwd) {
+async function runCli(args, cwd, envOverrides = {}) {
   const cliPath = path.resolve("packages/cli/dist/index.js");
 
   return await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cliPath, ...args], {
       cwd,
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        ...envOverrides
+      }
     });
 
     let stdout = "";
@@ -107,4 +111,28 @@ test("repoarena run exits with code 1 on failed benchmark", async () => {
   assert.match(result.stdout, /status=failed/);
 
   await rm(tempDir, { recursive: true, force: true });
+});
+
+test("repoarena doctor exits with code 0 in strict mode when all adapters are ready", async () => {
+  const result = await runCli(
+    ["doctor", "--agents", "demo-fast,demo-budget", "--strict"],
+    path.resolve(".")
+  );
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /status=ready/);
+});
+
+test("repoarena doctor exits with code 1 in strict mode when any adapter is not ready", async () => {
+  const result = await runCli(
+    ["doctor", "--agents", "demo-fast,cursor", "--strict"],
+    path.resolve("."),
+    {
+      REPOARENA_CURSOR_BIN: path.join("Z:", "repoarena-missing", "cursor.cmd")
+    }
+  );
+
+  assert.equal(result.code, 1);
+  assert.match(result.stdout, /- cursor/);
+  assert.match(result.stdout, /status=missing|status=blocked|status=unverified/);
 });
