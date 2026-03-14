@@ -307,3 +307,35 @@ test("repoarena init-ci writes a benchmark workflow", async () => {
 
   await rm(tempDir, { recursive: true, force: true });
 });
+
+test("repoarena init-ci supports nightly templates and custom output directories", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "repoarena-cli-"));
+  const workflowPath = path.join(tempDir, ".github", "workflows", "repoarena-nightly.yml");
+
+  const result = await runCli(
+    [
+      "init-ci",
+      "--task",
+      "examples/taskpacks/official/repo-health.yaml",
+      "--agents",
+      "demo-fast",
+      "--output",
+      workflowPath,
+      "--ci-template",
+      "nightly",
+      "--ci-output-dir",
+      ".repoarena/nightly"
+    ],
+    path.resolve(".")
+  );
+
+  assert.equal(result.code, 0);
+  const content = await readFile(workflowPath, "utf8");
+  assert.match(content, /name: RepoArena Nightly Benchmark/);
+  assert.match(content, /schedule:/);
+  assert.match(content, /doctor --agents demo-fast --probe-auth --strict --json > \.repoarena\/nightly\/doctor\.json/);
+  assert.doesNotMatch(content, /Comment benchmark summary on PR/);
+  assert.match(content, /cat \.repoarena\/nightly\/summary\.md >> "\$GITHUB_STEP_SUMMARY"/);
+
+  await rm(tempDir, { recursive: true, force: true });
+});

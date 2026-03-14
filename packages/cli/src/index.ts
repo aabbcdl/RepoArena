@@ -18,8 +18,10 @@ interface ParsedArgs {
   maxConcurrency?: number;
   json: boolean;
   templateName?: string;
+  ciTemplate?: string;
   force: boolean;
   workflowPath?: string;
+  ciOutputDir?: string;
 }
 
 const TASKPACK_TEMPLATES: Record<string, string> = {
@@ -129,7 +131,7 @@ Usage:
   repoarena doctor [--agents <comma,separated>] [--probe-auth] [--strict] [--json]
   repoarena list-adapters [--json]
   repoarena init-taskpack [--template <name>] [--output <path>] [--force]
-  repoarena init-ci [--task <path>] [--agents <comma,separated>] [--output <workflow.yml>] [--force]
+  repoarena init-ci [--task <path>] [--agents <comma,separated>] [--output <workflow.yml>] [--ci-template <pull-request|smoke|nightly>] [--ci-output-dir <path>] [--force]
 
 Examples:
   repoarena run --repo . --task examples/taskpacks/demo-repo-health.json --agents demo-fast,demo-thorough
@@ -142,6 +144,7 @@ Examples:
   repoarena list-adapters --json
   repoarena init-taskpack --template repo-health --output repoarena.taskpack.yaml
   repoarena init-ci --task repoarena.taskpack.yaml --agents demo-fast,codex
+  repoarena init-ci --ci-template nightly --task examples/taskpacks/official/repo-health.yaml --agents demo-fast
 `);
 }
 
@@ -198,6 +201,12 @@ function parseArgs(argv: string[]): ParsedArgs {
         break;
       case "--force":
         parsed.force = true;
+        break;
+      case "--ci-template":
+        parsed.ciTemplate = args.shift();
+        break;
+      case "--ci-output-dir":
+        parsed.ciOutputDir = args.shift();
         break;
       case "--workflow":
         parsed.workflowPath = args.shift();
@@ -342,19 +351,92 @@ async function runInitTaskpack(parsed: ParsedArgs): Promise<void> {
   console.log(`path=${outputPath}`);
 }
 
-function buildCiWorkflow(taskPath: string, agentIds: string[]): string {
+function buildCiWorkflow(options: {
+  taskPath: string;
+  agentIds: string[];
+  template: "pull-request" | "smoke" | "nightly";
+  outputDir: string;
+}): string {
+  const { taskPath, agentIds, template, outputDir } = options;
   const normalizedTaskPath = taskPath.replaceAll("\\", "/");
   const normalizedAgents = agentIds.join(",");
-
-  return `name: RepoArena Benchmark
-
-permissions:
+  const normalizedOutputDir = outputDir.replaceAll("\\", "/");
+  const workflowName =
+    template === "nightly"
+      ? "RepoArena Nightly Benchmark"
+      : template === "smoke"
+        ? "RepoArena Smoke Benchmark"
+        : "RepoArena Benchmark";
+  const permissionsBlock =
+    template === "pull-request"
+      ? `permissions:
   contents: read
-  pull-requests: write
-
-on:
-  pull_request:
+  pull-requests: write`
+      : `permissions:
+  contents: read`;
+  const onBlock =
+    template === "nightly"
+      ? `on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 1 * * *"`
+      : template === "smoke"
+        ? `on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main`
+        : `on:
+  pull_request:
+  workflow_dispatch:`;
+  const doctorCommand =
+    template === "nightly"
+      ? `node packages/cli/dist/index.js doctor --agents ${normalizedAgents} --probe-auth --strict --json > ${normalizedOutputDir}/doctor.json`
+      : `node packages/cli/dist/index.js doctor --agents ${normalizedAgents} --probe-auth --json > ${normalizedOutputDir}/doctor.json`;
+  const publishSummaryStep =
+    template === "pull-request"
+      ? `      - name: Publish benchmark summary
+        run: cat ${normalizedOutputDir}/pr-comment.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment benchmark summary on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("node:fs");
+            const marker = "<!-- repoarena-benchmark-summary -->";
+            const body = \`\${marker}\\n\${fs.readFileSync("${normalizedOutputDir}/pr-comment.md", "utf8")}\`;
+            const issue_number = context.payload.pull_request.number;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number
+            });
+            const existing = comments.find((comment) => comment.body && comment.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number,
+                body
+              });
+            }`
+      : `      - name: Publish benchmark summary
+        run: cat ${normalizedOutputDir}/summary.md >> "$GITHUB_STEP_SUMMARY"`;
+
+  return `name: ${workflowName}
+
+${permissionsBlock}
+
+${onBlock}
 
 jobs:
   benchmark:
@@ -383,61 +465,28 @@ jobs:
         run: pnpm build
 
       - name: Prepare RepoArena output directories
-        run: mkdir -p .repoarena/ci-benchmark
+        run: mkdir -p ${normalizedOutputDir}
 
       - name: Doctor adapters
-        run: node packages/cli/dist/index.js doctor --agents ${normalizedAgents} --probe-auth --json > .repoarena/ci-doctor.json
+        run: ${doctorCommand}
 
       - name: Run benchmark
-        run: node packages/cli/dist/index.js run --repo . --task ${normalizedTaskPath} --agents ${normalizedAgents} --output .repoarena/ci-benchmark --json > .repoarena/ci-benchmark/run.json
+        run: node packages/cli/dist/index.js run --repo . --task ${normalizedTaskPath} --agents ${normalizedAgents} --output ${normalizedOutputDir} --json > ${normalizedOutputDir}/run.json
 
-      - name: Publish benchmark summary
-        run: cat .repoarena/ci-benchmark/pr-comment.md >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Comment benchmark summary on PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require("node:fs");
-            const marker = "<!-- repoarena-benchmark-summary -->";
-            const body = \`\${marker}\\n\${fs.readFileSync(".repoarena/ci-benchmark/pr-comment.md", "utf8")}\`;
-            const issue_number = context.payload.pull_request.number;
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number
-            });
-            const existing = comments.find((comment) => comment.body && comment.body.includes(marker));
-
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number,
-                body
-              });
-            }
+${publishSummaryStep}
 
       - name: Upload benchmark artifacts
         uses: actions/upload-artifact@v4
         with:
           name: repoarena-benchmark
           path: |
-            .repoarena/ci-doctor.json
-            .repoarena/ci-benchmark/run.json
-            .repoarena/ci-benchmark/summary.json
-            .repoarena/ci-benchmark/summary.md
-            .repoarena/ci-benchmark/pr-comment.md
-            .repoarena/ci-benchmark/report.html
-            .repoarena/ci-benchmark/badge.json
+            ${normalizedOutputDir}/doctor.json
+            ${normalizedOutputDir}/run.json
+            ${normalizedOutputDir}/summary.json
+            ${normalizedOutputDir}/summary.md
+            ${normalizedOutputDir}/pr-comment.md
+            ${normalizedOutputDir}/report.html
+            ${normalizedOutputDir}/badge.json
 `;
 }
 
@@ -445,6 +494,11 @@ async function runInitCi(parsed: ParsedArgs): Promise<void> {
   const workflowPath = path.resolve(parsed.workflowPath ?? parsed.outputPath ?? ".github/workflows/repoarena-benchmark.yml");
   const taskPath = parsed.taskPath ?? "repoarena.taskpack.yaml";
   const agentIds = parsed.agentIds.length > 0 ? parsed.agentIds : ["demo-fast"];
+  const ciTemplate = (parsed.ciTemplate ?? "pull-request") as "pull-request" | "smoke" | "nightly";
+  if (!["pull-request", "smoke", "nightly"].includes(ciTemplate)) {
+    throw new Error('Unknown CI template. Use "pull-request", "smoke", or "nightly".');
+  }
+  const ciOutputDir = parsed.ciOutputDir ?? ".repoarena/ci-benchmark";
   const parentPath = path.dirname(workflowPath);
 
   try {
@@ -459,10 +513,14 @@ async function runInitCi(parsed: ParsedArgs): Promise<void> {
   }
 
   await fs.mkdir(parentPath, { recursive: true });
-  await fs.writeFile(workflowPath, buildCiWorkflow(taskPath, agentIds), "utf8");
+  await fs.writeFile(
+    workflowPath,
+    buildCiWorkflow({ taskPath, agentIds, template: ciTemplate, outputDir: ciOutputDir }),
+    "utf8"
+  );
 
   if (parsed.json) {
-    console.log(JSON.stringify({ workflowPath, taskPath, agentIds }, null, 2));
+    console.log(JSON.stringify({ workflowPath, taskPath, agentIds, ciTemplate, ciOutputDir }, null, 2));
     return;
   }
 
@@ -470,6 +528,8 @@ async function runInitCi(parsed: ParsedArgs): Promise<void> {
   console.log(`path=${workflowPath}`);
   console.log(`task=${taskPath}`);
   console.log(`agents=${agentIds.join(",")}`);
+  console.log(`template=${ciTemplate}`);
+  console.log(`output=${ciOutputDir}`);
 }
 
 async function runBenchmarkCommand(parsed: ParsedArgs): Promise<void> {

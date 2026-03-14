@@ -162,6 +162,53 @@ export function buildShareCard(run) {
   return lines.join("\n");
 }
 
+export function buildShareCardSvg(run) {
+  const summary = summarizeRun(run);
+  const verdict = getRunVerdict(run);
+  const bestAgent = verdict.bestAgent
+    ? `${verdict.bestAgent.agentTitle} (${verdict.bestAgent.agentId})`
+    : "n/a";
+  const fastest = verdict.fastest
+    ? `${verdict.fastest.agentTitle} (${verdict.fastest.durationMs}ms)`
+    : "n/a";
+  const text = (value) =>
+    String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="RepoArena share card">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f9f5ed" />
+      <stop offset="100%" stop-color="#efe6d6" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)" />
+  <rect x="48" y="48" width="1104" height="534" rx="28" fill="#fffdf8" stroke="#d9cebb" />
+  <text x="84" y="116" fill="#6b6259" font-family="Georgia, serif" font-size="22" letter-spacing="4">REPOARENA</text>
+  <text x="84" y="174" fill="#211911" font-family="Georgia, serif" font-size="54" font-weight="700">${text(run.task.title)}</text>
+  <text x="84" y="220" fill="#6b6259" font-family="Georgia, serif" font-size="24">${text(`${summary.successCount}/${summary.totalAgents} passing | Failed ${summary.failedCount} | Tokens ${summary.totalTokens}`)}</text>
+
+  <rect x="84" y="266" width="320" height="124" rx="20" fill="#f7f1e5" stroke="#d9cebb" />
+  <text x="108" y="306" fill="#6b6259" font-family="Georgia, serif" font-size="18">Best Agent</text>
+  <text x="108" y="348" fill="#211911" font-family="Georgia, serif" font-size="30" font-weight="700">${text(bestAgent)}</text>
+
+  <rect x="440" y="266" width="320" height="124" rx="20" fill="#f7f1e5" stroke="#d9cebb" />
+  <text x="464" y="306" fill="#6b6259" font-family="Georgia, serif" font-size="18">Fastest</text>
+  <text x="464" y="348" fill="#211911" font-family="Georgia, serif" font-size="30" font-weight="700">${text(fastest)}</text>
+
+  <rect x="796" y="266" width="320" height="124" rx="20" fill="#f7f1e5" stroke="#d9cebb" />
+  <text x="820" y="306" fill="#6b6259" font-family="Georgia, serif" font-size="18">Known Cost</text>
+  <text x="820" y="348" fill="#211911" font-family="Georgia, serif" font-size="30" font-weight="700">${text(`$${summary.knownCost.toFixed(2)}`)}</text>
+
+  <text x="84" y="456" fill="#9f4525" font-family="Georgia, serif" font-size="20">Generated from local RepoArena benchmark results</text>
+  <text x="84" y="500" fill="#6b6259" font-family="Georgia, serif" font-size="22">${text(`Run ${run.runId}`)}</text>
+  <text x="84" y="536" fill="#6b6259" font-family="Georgia, serif" font-size="22">${text(run.createdAt)}</text>
+</svg>`;
+}
+
 export function buildPrTable(run) {
   const header = [
     "| Agent | Status | Duration | Tokens | Cost | Judges | Files |",

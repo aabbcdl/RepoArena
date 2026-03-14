@@ -1,6 +1,7 @@
 import {
   buildPrTable,
   buildShareCard,
+  buildShareCardSvg,
   getAgentTrendRows,
   getCompareResults,
   getRunCompareRows,
@@ -55,6 +56,8 @@ const elements = {
   markdownContent: document.querySelector("#markdown-content"),
   copyShareCard: document.querySelector("#copy-share-card"),
   copyPrTable: document.querySelector("#copy-pr-table"),
+  copyShareSvg: document.querySelector("#copy-share-svg"),
+  downloadShareSvg: document.querySelector("#download-share-svg"),
   clipboardStatus: document.querySelector("#clipboard-status"),
   expandAll: document.querySelector("#expand-all"),
   collapseAll: document.querySelector("#collapse-all")
@@ -914,6 +917,18 @@ async function copyToClipboard(value, label) {
   }
 }
 
+function downloadTextFile(filename, contents, mimeType) {
+  const blob = new Blob([contents], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 function folderOf(file) {
   const relativePath = file.webkitRelativePath || file.name;
   const segments = relativePath.split("/");
@@ -1089,4 +1104,21 @@ elements.copyPrTable.addEventListener("click", async () => {
   }
 
   await copyToClipboard(buildPrTable(state.run), "PR table");
+});
+
+elements.copyShareSvg.addEventListener("click", async () => {
+  if (!state.run) {
+    return;
+  }
+
+  await copyToClipboard(buildShareCardSvg(state.run), "Share SVG");
+});
+
+elements.downloadShareSvg.addEventListener("click", () => {
+  if (!state.run) {
+    return;
+  }
+
+  downloadTextFile(`repoarena-${state.run.runId}.svg`, buildShareCardSvg(state.run), "image/svg+xml");
+  elements.clipboardStatus.textContent = "Share SVG downloaded.";
 });

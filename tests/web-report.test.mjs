@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildPrTable,
   buildShareCard,
+  buildShareCardSvg,
   findPreviousComparableRun,
   getAgentTrendRows,
   getCompareResults,
@@ -123,6 +124,28 @@ test("share helpers produce shareable summary text and PR tables", () => {
   assert.match(shareCard, /Best agent: demo-fast/);
   assert.match(prTable, /\| Agent \| Status \| Duration \| Tokens \| Cost \| Judges \| Files \|/);
   assert.match(prTable, /\| demo-fast \| success \| 1000ms \| 100 \| \$0\.10 \| 2\/2 \| 1 \|/);
+});
+
+test("buildShareCardSvg returns a shareable SVG card", () => {
+  const run = createRun("run-svg", "Task SVG", {
+    createdAt: "2026-03-14T10:00:00.000Z",
+    results: [
+      createResult("demo-fast", {
+        agentTitle: "Demo Fast",
+        durationMs: 900,
+        tokenUsage: 123,
+        costKnown: true,
+        estimatedCostUsd: 0.12,
+        judgeResults: [{ success: true }]
+      })
+    ]
+  });
+
+  const svg = buildShareCardSvg(run);
+  assert.match(svg, /^<svg/);
+  assert.match(svg, /Task SVG/);
+  assert.match(svg, /Demo Fast/);
+  assert.match(svg, /Run run-svg/);
 });
 
 test("findPreviousComparableRun returns the previous run with the same task title", () => {
