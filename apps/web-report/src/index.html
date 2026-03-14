@@ -12,12 +12,17 @@
         <div class="brand">
           <p class="eyebrow">RepoArena</p>
           <h1>Web Report</h1>
-          <p class="muted">Load a `summary.json` file and inspect benchmark results interactively.</p>
+          <p class="muted">Load linked `summary.json` and `summary.md` files to inspect benchmark results interactively.</p>
         </div>
 
         <label class="file-picker">
           <span>Load Summary</span>
           <input id="summary-file" type="file" accept=".json,application/json" />
+        </label>
+
+        <label class="file-picker">
+          <span>Load Markdown Summary</span>
+          <input id="markdown-file" type="file" accept=".md,text/markdown,text/plain" />
         </label>
 
         <label class="file-picker">
@@ -49,7 +54,7 @@
           <p class="eyebrow">Interactive Viewer</p>
           <h2>Inspect one run without scrolling through a giant static page.</h2>
           <p class="muted">
-            Load a RepoArena `summary.json` file from `.repoarena/runs/&lt;run-id&gt;/summary.json`.
+            Load RepoArena outputs from `.repoarena/runs/&lt;run-id&gt;/summary.json` and `summary.md`.
           </p>
         </section>
 
@@ -72,6 +77,14 @@
           <section class="result-layout">
             <div id="result-summary" class="card result-summary"></div>
             <div id="result-details" class="result-details"></div>
+          </section>
+
+          <section id="markdown-panel" class="detail-card hidden">
+            <div class="panel-header">
+              <h3>Markdown Summary</h3>
+              <span id="markdown-status" class="muted">Not loaded</span>
+            </div>
+            <div id="markdown-content" class="markdown-render"></div>
           </section>
         </section>
       </main>

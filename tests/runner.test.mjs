@@ -295,3 +295,67 @@ test("runBenchmark supports built-in file, glob, count, and json judges", async 
 
   await rm(tempDir, { recursive: true, force: true });
 });
+
+test("runBenchmark supports snapshot and json-schema judges", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "repoarena-runner-"));
+  const repoPath = path.join(tempDir, "repo");
+  const outputPath = path.join(tempDir, "output");
+  const taskPath = path.join(tempDir, "task.json");
+
+  await mkdir(repoPath, { recursive: true });
+
+  await writeFile(path.join(repoPath, "README.md"), "# Temp Repo\n", "utf8");
+  await writeJson(path.join(repoPath, "package.json"), { name: "temp-repo", version: "0.0.0" });
+
+  await writeJson(taskPath, {
+    schemaVersion: "repoarena.taskpack/v1",
+    id: "advanced-judges",
+    title: "Advanced Judges",
+    prompt: "Run snapshot and schema assertions.",
+    setupCommands: [
+      {
+        label: "Prepare snapshot fixtures",
+        command:
+          "node -e \"const fs=require('node:fs');fs.mkdirSync('fixtures',{recursive:true});fs.writeFileSync('fixtures/actual.txt','hello snapshot\\n');fs.writeFileSync('fixtures/expected.txt','hello snapshot\\n');fs.writeFileSync('fixtures/config.json',JSON.stringify({enabled:true,name:'repoarena'}));fs.writeFileSync('fixtures/schema.json',JSON.stringify({type:'object',required:['enabled','name'],properties:{enabled:{type:'boolean'},name:{type:'string'}}}));\""
+      }
+    ],
+    judges: [
+      {
+        id: "snapshot-check",
+        type: "snapshot",
+        label: "Snapshot matches",
+        path: "fixtures/actual.txt",
+        snapshotPath: "fixtures/expected.txt"
+      },
+      {
+        id: "schema-check",
+        type: "json-schema",
+        label: "Schema validates config",
+        path: "fixtures/config.json",
+        schemaPath: "fixtures/schema.json"
+      }
+    ],
+    teardownCommands: [
+      {
+        label: "Cleanup advanced fixtures",
+        command: "node -e \"require('node:fs').rmSync('fixtures',{recursive:true,force:true})\""
+      }
+    ]
+  });
+
+  const benchmark = await runBenchmark({
+    repoPath,
+    taskPath,
+    agentIds: ["demo-fast"],
+    outputPath
+  });
+
+  assert.equal(benchmark.results[0].status, "success");
+  assert.deepEqual(
+    benchmark.results[0].judgeResults.map((judge) => judge.type),
+    ["snapshot", "json-schema"]
+  );
+  assert.equal(benchmark.results[0].judgeResults.every((judge) => judge.success), true);
+
+  await rm(tempDir, { recursive: true, force: true });
+});

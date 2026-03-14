@@ -7,7 +7,9 @@ import {
   FileCountJudge,
   FileExistsJudge,
   GlobJudge,
+  JsonSchemaJudge,
   JsonValueJudge,
+  SnapshotJudge,
   TASK_PACK_SCHEMA_V1,
   TaskJudge,
   TaskPack
@@ -93,6 +95,14 @@ function assertStringRecord(value: unknown, label: string): Record<string, strin
   ]);
 
   return Object.fromEntries(entries);
+}
+
+function assertObject(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`Task pack field "${label}" must be an object.`);
+  }
+
+  return value as Record<string, unknown>;
 }
 
 function normalizeJudge(
@@ -188,6 +198,37 @@ function normalizeJudge(
       );
     }
 
+    return judge;
+  }
+
+  if (type === "snapshot") {
+    const judge: SnapshotJudge = {
+      id,
+      label,
+      type: "snapshot",
+      path: assertString(value.path, `judges[${index}].path`),
+      snapshotPath: assertString(value.snapshotPath, `judges[${index}].snapshotPath`)
+    };
+    return judge;
+  }
+
+  if (type === "json-schema") {
+    const schema = value.schema === undefined ? undefined : assertObject(value.schema, `judges[${index}].schema`);
+    const schemaPath = assertOptionalString(value.schemaPath, `judges[${index}].schemaPath`);
+    if (!schema && !schemaPath) {
+      throw new Error(
+        `Task pack field "judges[${index}]" for type "json-schema" must define schema or schemaPath.`
+      );
+    }
+
+    const judge: JsonSchemaJudge = {
+      id,
+      label,
+      type: "json-schema",
+      path: assertString(value.path, `judges[${index}].path`),
+      schema,
+      schemaPath
+    };
     return judge;
   }
 

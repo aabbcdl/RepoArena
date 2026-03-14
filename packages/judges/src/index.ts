@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import Ajv from "ajv";
 import {
   CommandExecutionSpec,
   CommandStepResult,
@@ -10,8 +11,10 @@ import {
   FileCountJudge,
   FileExistsJudge,
   GlobJudge,
+  JsonSchemaJudge,
   JsonValueJudge,
   JudgeResult,
+  SnapshotJudge,
   TaskJudge,
   buildExecutionEnvironment,
   uniqueSorted
@@ -435,6 +438,100 @@ async function runFileCountJudge(judge: FileCountJudge, workspacePath: string): 
   }
 }
 
+async function runSnapshotJudge(judge: SnapshotJudge, workspacePath: string): Promise<JudgeResult> {
+  const startedAt = Date.now();
+  const targetPath = resolveWorkspacePath(workspacePath, judge.path, `Judge "${judge.id}" path`);
+  const snapshotPath = resolveWorkspacePath(
+    workspacePath,
+    judge.snapshotPath,
+    `Judge "${judge.id}" snapshotPath`
+  );
+
+  try {
+    const [actual, expected] = await Promise.all([
+      fs.readFile(targetPath, "utf8"),
+      fs.readFile(snapshotPath, "utf8")
+    ]);
+    const normalizedActual = actual.replaceAll("\r\n", "\n");
+    const normalizedExpected = expected.replaceAll("\r\n", "\n");
+    const success = normalizedActual === normalizedExpected;
+
+    return {
+      judgeId: judge.id,
+      label: judge.label,
+      type: "snapshot",
+      target: judge.path,
+      expectation: `matches ${judge.snapshotPath}`,
+      exitCode: success ? 0 : 1,
+      success,
+      stdout: success ? `Snapshot matched ${judge.snapshotPath}.` : "",
+      stderr: success ? "" : `Snapshot mismatch for "${judge.path}" against "${judge.snapshotPath}".`,
+      durationMs: Date.now() - startedAt
+    };
+  } catch (error) {
+    return {
+      judgeId: judge.id,
+      label: judge.label,
+      type: "snapshot",
+      target: judge.path,
+      expectation: `matches ${judge.snapshotPath}`,
+      exitCode: 1,
+      success: false,
+      stdout: "",
+      stderr: error instanceof Error ? error.message : String(error),
+      durationMs: Date.now() - startedAt
+    };
+  }
+}
+
+async function runJsonSchemaJudge(judge: JsonSchemaJudge, workspacePath: string): Promise<JudgeResult> {
+  const startedAt = Date.now();
+  const targetPath = resolveWorkspacePath(workspacePath, judge.path, `Judge "${judge.id}" path`);
+
+  try {
+    const schema =
+      judge.schema ??
+      (JSON.parse(
+        await fs.readFile(
+          resolveWorkspacePath(workspacePath, judge.schemaPath ?? "", `Judge "${judge.id}" schemaPath`),
+          "utf8"
+        )
+      ) as Record<string, unknown>);
+    const payload = JSON.parse(await fs.readFile(targetPath, "utf8")) as unknown;
+    const ajv = new Ajv({ allErrors: true, strict: false });
+    const validate = ajv.compile(schema);
+    const success = Boolean(validate(payload));
+    const validationErrors =
+      validate.errors?.map((error) => `${error.instancePath || "/"} ${error.message ?? "invalid"}`) ?? [];
+
+    return {
+      judgeId: judge.id,
+      label: judge.label,
+      type: "json-schema",
+      target: judge.path,
+      expectation: judge.schemaPath ? `schemaPath=${judge.schemaPath}` : "inline-schema",
+      exitCode: success ? 0 : 1,
+      success,
+      stdout: success ? `JSON schema validation passed for ${judge.path}.` : "",
+      stderr: success ? "" : validationErrors.join("; "),
+      durationMs: Date.now() - startedAt
+    };
+  } catch (error) {
+    return {
+      judgeId: judge.id,
+      label: judge.label,
+      type: "json-schema",
+      target: judge.path,
+      expectation: judge.schemaPath ? `schemaPath=${judge.schemaPath}` : "inline-schema",
+      exitCode: 1,
+      success: false,
+      stdout: "",
+      stderr: error instanceof Error ? error.message : String(error),
+      durationMs: Date.now() - startedAt
+    };
+  }
+}
+
 export async function runJudge(
   judge: TaskJudge,
   workspacePath: string,
@@ -453,6 +550,10 @@ export async function runJudge(
       return await runGlobJudge(judge, workspacePath);
     case "file-count":
       return await runFileCountJudge(judge, workspacePath);
+    case "snapshot":
+      return await runSnapshotJudge(judge, workspacePath);
+    case "json-schema":
+      return await runJsonSchemaJudge(judge, workspacePath);
   }
 }
 

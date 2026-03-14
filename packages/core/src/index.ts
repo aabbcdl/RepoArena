@@ -63,13 +63,32 @@ export interface FileCountJudge {
   max?: number;
 }
 
+export interface SnapshotJudge {
+  id: string;
+  label: string;
+  type: "snapshot";
+  path: string;
+  snapshotPath: string;
+}
+
+export interface JsonSchemaJudge {
+  id: string;
+  label: string;
+  type: "json-schema";
+  path: string;
+  schema?: Record<string, unknown>;
+  schemaPath?: string;
+}
+
 export type TaskJudge =
   | CommandJudge
   | FileExistsJudge
   | FileContainsJudge
   | JsonValueJudge
   | GlobJudge
-  | FileCountJudge;
+  | FileCountJudge
+  | SnapshotJudge
+  | JsonSchemaJudge;
 
 export interface TaskPack {
   schemaVersion: typeof TASK_PACK_SCHEMA_V1;

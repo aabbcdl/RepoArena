@@ -326,6 +326,16 @@ input {
   gap: 16px;
 }
 
+.markdown-render pre {
+  margin: 0;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  border-radius: 14px;
+  padding: 16px;
+  background: var(--paper-2);
+  border: 1px solid var(--border);
+}
+
 .step-list {
   display: grid;
   gap: 10px;

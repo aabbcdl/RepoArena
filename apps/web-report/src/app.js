@@ -2,11 +2,14 @@ const state = {
   runs: [],
   run: null,
   selectedRunId: null,
-  selectedAgentId: null
+  selectedAgentId: null,
+  markdownByRunId: new Map(),
+  standaloneMarkdown: null
 };
 
 const elements = {
   fileInput: document.querySelector("#summary-file"),
+  markdownInput: document.querySelector("#markdown-file"),
   folderInput: document.querySelector("#runs-folder"),
   runInfo: document.querySelector("#run-info"),
   runList: document.querySelector("#run-list"),
@@ -21,6 +24,9 @@ const elements = {
   preflights: document.querySelector("#preflights"),
   resultSummary: document.querySelector("#result-summary"),
   resultDetails: document.querySelector("#result-details"),
+  markdownPanel: document.querySelector("#markdown-panel"),
+  markdownStatus: document.querySelector("#markdown-status"),
+  markdownContent: document.querySelector("#markdown-content"),
   expandAll: document.querySelector("#expand-all"),
   collapseAll: document.querySelector("#collapse-all")
 };
@@ -58,6 +64,10 @@ function formatJudgeType(type) {
       return "Glob";
     case "file-count":
       return "File Count";
+    case "snapshot":
+      return "Snapshot";
+    case "json-schema":
+      return "JSON Schema";
     default:
       return "Command";
   }
@@ -87,16 +97,21 @@ function updateCurrentRun() {
   }
 }
 
-function applyRuns(runs) {
+function applyRuns(runs, markdownByRunId = new Map()) {
   state.runs = sortRuns(runs);
+  state.markdownByRunId = markdownByRunId;
   state.selectedRunId = state.runs[0]?.runId ?? null;
   updateCurrentRun();
   render();
 }
 
-function applySingleRun(run) {
+function applySingleRun(run, markdown = null) {
   const existingRuns = state.runs.filter((entry) => entry.runId !== run.runId);
-  applyRuns([run, ...existingRuns]);
+  const markdownByRunId = new Map(state.markdownByRunId);
+  if (markdown) {
+    markdownByRunId.set(run.runId, markdown);
+  }
+  applyRuns([run, ...existingRuns], markdownByRunId);
 }
 
 function renderRunInfo(run) {
@@ -125,12 +140,14 @@ function renderRunList() {
     .map((run) => {
       const active = run.runId === state.selectedRunId ? "active" : "";
       const successCount = run.results.filter((result) => result.status === "success").length;
+      const hasMarkdown = state.markdownByRunId.has(run.runId);
 
       return `
         <button class="run-button ${active}" type="button" data-run-id="${escapeHtml(run.runId)}">
           <strong>${escapeHtml(run.task.title)}</strong>
           <div class="meta">${escapeHtml(run.createdAt)}</div>
-          <div class="meta">${successCount}/${run.results.length} success · ${escapeHtml(run.runId)}</div>
+          <div class="meta">${successCount}/${run.results.length} success | ${escapeHtml(run.runId)}</div>
+          <div class="meta">${hasMarkdown ? "markdown linked" : "json only"}</div>
         </button>
       `;
     })
@@ -203,7 +220,7 @@ function renderAgentList(run) {
             <span class="status-badge ${statusClass(result.status)}">${escapeHtml(result.status)}</span>
           </div>
           <div class="meta">
-            ${escapeHtml(result.agentId)} · ${escapeHtml(formatDuration(result.durationMs))} · ${escapeHtml(
+            ${escapeHtml(result.agentId)} | ${escapeHtml(formatDuration(result.durationMs))} | ${escapeHtml(
               formatCost(result)
             )}
           </div>
@@ -356,6 +373,31 @@ function renderDiff(result) {
   `;
 }
 
+function renderMarkdownBlock(markdown) {
+  const escaped = escapeHtml(markdown);
+  return `<pre>${escaped}</pre>`;
+}
+
+function renderMarkdownPanel() {
+  const markdown =
+    (state.run && state.markdownByRunId.get(state.run.runId)) ??
+    state.standaloneMarkdown ??
+    null;
+
+  if (!markdown) {
+    setHidden(elements.markdownPanel, true);
+    elements.markdownStatus.textContent = "Not loaded";
+    elements.markdownContent.innerHTML = "";
+    return;
+  }
+
+  setHidden(elements.markdownPanel, false);
+  elements.markdownStatus.textContent = state.run && state.markdownByRunId.has(state.run.runId)
+    ? "Linked to selected run"
+    : "Standalone markdown";
+  elements.markdownContent.innerHTML = renderMarkdownBlock(markdown);
+}
+
 function renderSelectedAgent() {
   if (!state.run || !state.selectedAgentId) {
     return;
@@ -406,13 +448,14 @@ function renderDashboard(run) {
   setHidden(elements.dashboard, false);
 
   elements.taskTitle.textContent = run.task.title;
-  elements.taskMeta.textContent = `${run.task.id} · ${run.task.schemaVersion} · ${run.createdAt}`;
+  elements.taskMeta.textContent = `${run.task.id} | ${run.task.schemaVersion} | ${run.createdAt}`;
 
   renderRunInfo(run);
   renderMetrics(run);
   renderPreflights(run);
   renderAgentList(run);
   renderSelectedAgent();
+  renderMarkdownPanel();
 }
 
 function render() {
@@ -425,6 +468,7 @@ function render() {
     elements.agentCount.textContent = "0";
     elements.agentList.className = "agent-list empty-state";
     elements.agentList.textContent = "No report loaded.";
+    renderMarkdownPanel();
     return;
   }
 
@@ -432,8 +476,7 @@ function render() {
 }
 
 async function readRunFromFile(file) {
-  const parsed = JSON.parse(await file.text());
-  return parsed;
+  return JSON.parse(await file.text());
 }
 
 async function handleFileSelection(event) {
@@ -446,20 +489,51 @@ async function handleFileSelection(event) {
   applySingleRun(run);
 }
 
-async function handleFolderSelection(event) {
-  const files = Array.from(event.target.files ?? []).filter((file) =>
-    file.name.toLowerCase() === "summary.json"
-  );
-
-  if (files.length === 0) {
+async function handleMarkdownSelection(event) {
+  const file = event.target.files?.[0];
+  if (!file) {
     return;
   }
 
-  const runs = await Promise.all(files.map(async (file) => await readRunFromFile(file)));
-  applyRuns(runs);
+  state.standaloneMarkdown = await file.text();
+  renderMarkdownPanel();
+}
+
+function folderOf(file) {
+  const relativePath = file.webkitRelativePath || file.name;
+  const segments = relativePath.split("/");
+  segments.pop();
+  return segments.join("/");
+}
+
+async function handleFolderSelection(event) {
+  const files = Array.from(event.target.files ?? []);
+  const summaryFiles = files.filter((file) => file.name.toLowerCase() === "summary.json");
+  if (summaryFiles.length === 0) {
+    return;
+  }
+
+  const markdownByFolder = new Map();
+  for (const file of files.filter((entry) => entry.name.toLowerCase() === "summary.md")) {
+    markdownByFolder.set(folderOf(file), await file.text());
+  }
+
+  const runs = [];
+  const markdownByRunId = new Map();
+  for (const file of summaryFiles) {
+    const run = await readRunFromFile(file);
+    runs.push(run);
+    const markdown = markdownByFolder.get(folderOf(file));
+    if (markdown) {
+      markdownByRunId.set(run.runId, markdown);
+    }
+  }
+
+  applyRuns(runs, markdownByRunId);
 }
 
 elements.fileInput.addEventListener("change", handleFileSelection);
+elements.markdownInput.addEventListener("change", handleMarkdownSelection);
 elements.folderInput.addEventListener("change", handleFolderSelection);
 
 elements.runList.addEventListener("click", (event) => {

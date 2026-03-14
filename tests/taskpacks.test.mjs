@@ -292,3 +292,50 @@ test("loadTaskPack supports YAML task packs with glob and file-count judges", as
 
   await rm(tempDir, { recursive: true, force: true });
 });
+
+test("loadTaskPack parses snapshot and json-schema judges", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "repoarena-taskpack-"));
+  const taskPath = path.join(tempDir, "task.json");
+
+  await writeFile(
+    taskPath,
+    JSON.stringify(
+      {
+        schemaVersion: "repoarena.taskpack/v1",
+        id: "advanced-judges",
+        title: "Advanced Judges",
+        prompt: "Parse snapshot and schema judges",
+        judges: [
+          {
+            id: "snapshot-check",
+            type: "snapshot",
+            label: "Generated file matches snapshot",
+            path: "actual.txt",
+            snapshotPath: "expected.txt"
+          },
+          {
+            id: "schema-check",
+            type: "json-schema",
+            label: "Config matches schema",
+            path: "config.json",
+            schemaPath: "schema.json"
+          }
+        ]
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const taskPack = await loadTaskPack(taskPath);
+
+  assert.equal(taskPack.judges[0].type, "snapshot");
+  assert.equal(taskPack.judges[0].path, "actual.txt");
+  assert.equal(taskPack.judges[0].snapshotPath, "expected.txt");
+  assert.equal(taskPack.judges[1].type, "json-schema");
+  assert.equal(taskPack.judges[1].path, "config.json");
+  assert.equal(taskPack.judges[1].schemaPath, "schema.json");
+
+  await rm(tempDir, { recursive: true, force: true });
+});

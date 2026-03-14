@@ -6,7 +6,7 @@
 
 RepoArena lets you run Claude Code, Codex, Cursor, Devin, and open source agents against the same repository tasks, then compare success rate, duration, cost, diffs, and replay traces in one report.
 
-Task packs use a versioned schema. The current format is `repoarena.taskpack/v1`, with structured `judges` definitions for command, file, glob, and JSON evaluation. Both JSON and YAML task packs are supported.
+Task packs use a versioned schema. The current format is `repoarena.taskpack/v1`, with structured `judges` definitions for command, file, glob, snapshot, and JSON evaluation. Both JSON and YAML task packs are supported.
 
 ## What It Does
 
@@ -26,7 +26,9 @@ This repository already contains a runnable prototype with:
 - a working `codex` adapter
 - `claude-code` and `cursor` adapters with auth-aware failure reporting
 - static HTML and JSON report generation
-- an interactive `apps/web-report` viewer for `summary.json`
+- Markdown summaries for CI, PR comments, and sharing
+- an interactive `apps/web-report` viewer for linked `summary.json` and `summary.md`
+- GitHub Actions smoke benchmarks that can comment results on pull requests
 - GitHub Actions CI with a smoke benchmark run
 
 ## Quick Start
@@ -96,7 +98,9 @@ Built-in judge types:
 - `file-contains`
 - `glob`
 - `file-count`
+- `snapshot`
 - `json-value`
+- `json-schema`
 
 Command judges can define:
 - `id`
@@ -113,9 +117,11 @@ File judges can define:
 - `type: "file-contains"` with `path`, `pattern`, optional `regex`, optional `flags`
 - `type: "glob"` with `pattern`, optional `minMatches`, optional `maxMatches`
 - `type: "file-count"` with `pattern` and one or more of `equals`, `min`, `max`
+- `type: "snapshot"` with `path` and `snapshotPath`
 
 JSON judges can define:
 - `type: "json-value"` with `path`, `pointer`, and `expected`
+- `type: "json-schema"` with `path` and either inline `schema` or `schemaPath`
 
 Environment handling is allowlist-based. Task packs can expose specific host variables through `envAllowList`, and each setup/judge/teardown step can further extend that allowlist or inject inline `env` overrides. Agent execution still receives the task-level filtered environment.
 
