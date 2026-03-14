@@ -21,6 +21,7 @@ Task packs use a versioned schema. The current format is `repoarena.taskpack/v1`
 This repository already contains a runnable prototype with:
 - a local `repoarena run` CLI
 - a local `repoarena doctor` CLI
+- a local `repoarena init-taskpack` CLI
 - built-in demo adapters
 - a working `codex` adapter
 - `claude-code` and `cursor` adapters with auth-aware failure reporting
@@ -45,6 +46,12 @@ Check adapter readiness:
 pnpm doctor
 ```
 
+List all available adapters:
+
+```bash
+node packages/cli/dist/index.js list-adapters --json
+```
+
 Fail fast when any requested adapter is not fully ready:
 
 ```bash
@@ -55,6 +62,12 @@ Update snapshot fixtures during a benchmark run:
 
 ```bash
 node packages/cli/dist/index.js run --repo . --task examples/taskpacks/demo-repo-health.yaml --agents demo-fast --update-snapshots
+```
+
+Generate a starter YAML task pack:
+
+```bash
+node packages/cli/dist/index.js init-taskpack --template repo-health --output repoarena.taskpack.yaml
 ```
 
 Run the Codex adapter:
@@ -88,6 +101,11 @@ Supported task pack file formats:
 - `.json`
 - `.yaml`
 - `.yml`
+
+Built-in starter templates:
+- `repo-health`
+- `json-api`
+- `snapshot`
 
 Each task pack defines:
 - repository task metadata

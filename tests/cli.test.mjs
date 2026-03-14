@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -187,6 +187,43 @@ test("repoarena run can update snapshots from the CLI", async () => {
 
   assert.equal(result.code, 0);
   assert.match(result.stdout, /status=success/);
+
+  await rm(tempDir, { recursive: true, force: true });
+});
+
+test("repoarena doctor supports JSON output", async () => {
+  const result = await runCli(["doctor", "--agents", "demo-fast", "--json"], path.resolve("."));
+
+  assert.equal(result.code, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(Array.isArray(payload), true);
+  assert.equal(payload[0].agentId, "demo-fast");
+  assert.equal(payload[0].status, "ready");
+});
+
+test("repoarena list-adapters supports JSON output", async () => {
+  const result = await runCli(["list-adapters", "--json"], path.resolve("."));
+
+  assert.equal(result.code, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(Array.isArray(payload), true);
+  assert.equal(payload.some((adapter) => adapter.id === "demo-fast"), true);
+});
+
+test("repoarena init-taskpack writes a starter YAML file", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "repoarena-cli-"));
+  const outputPath = path.join(tempDir, "repoarena.taskpack.yaml");
+
+  const result = await runCli(
+    ["init-taskpack", "--template", "snapshot", "--output", outputPath],
+    path.resolve(".")
+  );
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /RepoArena task pack created/);
+  const content = await readFile(outputPath, "utf8");
+  assert.match(content, /schemaVersion: repoarena\.taskpack\/v1/);
+  assert.match(content, /type: snapshot/);
 
   await rm(tempDir, { recursive: true, force: true });
 });

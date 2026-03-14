@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { promises as fs } from "node:fs";
 import path from "node:path";
 import { listAvailableAdapters, preflightAdapters } from "@repoarena/adapters";
 import { formatDuration } from "@repoarena/core";
@@ -15,14 +16,75 @@ interface ParsedArgs {
   strict: boolean;
   updateSnapshots: boolean;
   maxConcurrency?: number;
+  json: boolean;
+  templateName?: string;
+  force: boolean;
 }
+
+const TASKPACK_TEMPLATES: Record<string, string> = {
+  "repo-health": `schemaVersion: repoarena.taskpack/v1
+id: repo-health
+title: Repository Health
+prompt: |
+  Review the repository and make the smallest useful change that improves correctness,
+  reliability, or maintainability. Keep changes scoped and preserve existing behavior
+  unless a test or fixture shows otherwise.
+envAllowList: []
+judges:
+  - id: readme-exists
+    type: file-exists
+    label: README exists
+    path: README.md
+  - id: package-json-exists
+    type: file-exists
+    label: package.json exists
+    path: package.json
+`,
+  "json-api": `schemaVersion: repoarena.taskpack/v1
+id: json-api-contract
+title: JSON API Contract
+prompt: |
+  Update the implementation so the generated JSON output matches the expected contract
+  and values described by the task pack.
+judges:
+  - id: api-schema
+    type: json-schema
+    label: API payload matches schema
+    path: fixtures/response.json
+    schemaPath: fixtures/response.schema.json
+  - id: api-status
+    type: json-value
+    label: Status stays ready
+    path: fixtures/response.json
+    pointer: /status
+    expected: ready
+`,
+  snapshot: `schemaVersion: repoarena.taskpack/v1
+id: snapshot-regression
+title: Snapshot Regression
+prompt: |
+  Update the implementation so the generated output matches the stored snapshot fixture.
+setupCommands:
+  - id: prepare-output
+    label: Prepare output fixture
+    command: node scripts/generate-output.js
+judges:
+  - id: output-snapshot
+    type: snapshot
+    label: Output matches snapshot
+    path: fixtures/actual.txt
+    snapshotPath: fixtures/expected.txt
+`
+};
 
 function printHelp(): void {
   console.log(`RepoArena CLI
 
 Usage:
   repoarena run --repo <path> --task <task.json> --agents <comma,separated> [--probe-auth] [--update-snapshots] [--max-concurrency <n>]
-  repoarena doctor [--agents <comma,separated>] [--probe-auth] [--strict]
+  repoarena doctor [--agents <comma,separated>] [--probe-auth] [--strict] [--json]
+  repoarena list-adapters [--json]
+  repoarena init-taskpack [--template <name>] [--output <path>] [--force]
 
 Examples:
   repoarena run --repo . --task examples/taskpacks/demo-repo-health.json --agents demo-fast,demo-thorough
@@ -30,6 +92,9 @@ Examples:
   repoarena run --repo . --task examples/taskpacks/demo-repo-health.yaml --agents demo-fast --update-snapshots
   repoarena doctor --agents codex,claude-code,cursor --probe-auth
   repoarena doctor --agents codex,claude-code,cursor --probe-auth --strict
+  repoarena doctor --agents codex,demo-fast --json
+  repoarena list-adapters --json
+  repoarena init-taskpack --template repo-health --output repoarena.taskpack.yaml
 `);
 }
 
@@ -38,7 +103,9 @@ function parseArgs(argv: string[]): ParsedArgs {
     agentIds: [],
     probeAuth: false,
     strict: false,
-    updateSnapshots: false
+    updateSnapshots: false,
+    json: false,
+    force: false
   };
 
   const args = [...argv];
@@ -76,6 +143,15 @@ function parseArgs(argv: string[]): ParsedArgs {
       case "--update-snapshots":
         parsed.updateSnapshots = true;
         break;
+      case "--json":
+        parsed.json = true;
+        break;
+      case "--template":
+        parsed.templateName = args.shift();
+        break;
+      case "--force":
+        parsed.force = true;
+        break;
       case "--max-concurrency": {
         const value = Number.parseInt(args.shift() ?? "", 10);
         if (!Number.isInteger(value) || value <= 0) {
@@ -106,26 +182,82 @@ async function runDoctor(parsed: ParsedArgs): Promise<void> {
           .sort();
 
   const preflights = await preflightAdapters(agentIds, { probeAuth: parsed.probeAuth });
-  console.log("\nRepoArena doctor\n");
-  for (const preflight of preflights) {
-    console.log(
-      [
-        `- ${preflight.agentId}`,
-        `status=${preflight.status}`,
-        preflight.command ? `command=${preflight.command}` : "",
-        `summary=${preflight.summary}`
-      ]
-        .filter(Boolean)
-        .join(" | ")
-    );
-    for (const detail of preflight.details ?? []) {
-      console.log(`  detail: ${detail}`);
+  if (parsed.json) {
+    console.log(JSON.stringify(preflights, null, 2));
+  } else {
+    console.log("\nRepoArena doctor\n");
+    for (const preflight of preflights) {
+      console.log(
+        [
+          `- ${preflight.agentId}`,
+          `status=${preflight.status}`,
+          preflight.command ? `command=${preflight.command}` : "",
+          `summary=${preflight.summary}`
+        ]
+          .filter(Boolean)
+          .join(" | ")
+      );
+      for (const detail of preflight.details ?? []) {
+        console.log(`  detail: ${detail}`);
+      }
     }
   }
 
   if (parsed.strict && preflights.some((preflight) => preflight.status !== "ready")) {
     process.exitCode = 1;
   }
+}
+
+async function runListAdapters(parsed: ParsedArgs): Promise<void> {
+  const adapters = listAvailableAdapters()
+    .map((adapter) => ({ id: adapter.id, title: adapter.title, kind: adapter.kind }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+
+  if (parsed.json) {
+    console.log(JSON.stringify(adapters, null, 2));
+    return;
+  }
+
+  console.log("\nRepoArena adapters\n");
+  for (const adapter of adapters) {
+    console.log(`- ${adapter.id} | kind=${adapter.kind} | title=${adapter.title}`);
+  }
+}
+
+async function runInitTaskpack(parsed: ParsedArgs): Promise<void> {
+  const templateName = parsed.templateName ?? "repo-health";
+  const template = TASKPACK_TEMPLATES[templateName];
+  if (!template) {
+    throw new Error(
+      `Unknown task pack template "${templateName}". Available templates: ${Object.keys(TASKPACK_TEMPLATES).join(", ")}`
+    );
+  }
+
+  const outputPath = path.resolve(parsed.outputPath ?? "repoarena.taskpack.yaml");
+  const parentPath = path.dirname(outputPath);
+
+  try {
+    await fs.access(outputPath);
+    if (!parsed.force) {
+      throw new Error(`Refusing to overwrite existing file: ${outputPath}. Use --force to replace it.`);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  await fs.mkdir(parentPath, { recursive: true });
+  await fs.writeFile(outputPath, template, "utf8");
+
+  if (parsed.json) {
+    console.log(JSON.stringify({ template: templateName, outputPath }, null, 2));
+    return;
+  }
+
+  console.log(`\nRepoArena task pack created`);
+  console.log(`template=${templateName}`);
+  console.log(`path=${outputPath}`);
 }
 
 async function runBenchmarkCommand(parsed: ParsedArgs): Promise<void> {
@@ -187,6 +319,16 @@ async function main(): Promise<void> {
 
   if (parsed.command === "run") {
     await runBenchmarkCommand(parsed);
+    return;
+  }
+
+  if (parsed.command === "list-adapters") {
+    await runListAdapters(parsed);
+    return;
+  }
+
+  if (parsed.command === "init-taskpack") {
+    await runInitTaskpack(parsed);
     return;
   }
 
