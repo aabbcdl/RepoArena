@@ -30,6 +30,22 @@ export interface BenchmarkOptions {
   probeAuth?: boolean;
   maxConcurrency?: number;
   updateSnapshots?: boolean;
+  onProgress?: (event: BenchmarkProgressEvent) => void | Promise<void>;
+}
+
+export interface BenchmarkProgressEvent {
+  phase:
+    | "starting"
+    | "preflight"
+    | "agent-start"
+    | "agent-finish"
+    | "report"
+    | "complete";
+  message: string;
+  agentId?: string;
+  variantId?: string;
+  displayLabel?: string;
+  metadata?: Record<string, unknown>;
 }
 
 const DEFAULT_AGENT_CONCURRENCY = 1;
@@ -428,16 +444,72 @@ export async function runBenchmark(options: BenchmarkOptions): Promise<Benchmark
 
   await ensureDirectory(outputPath);
   await ensureDirectory(workspaceRootPath);
+  await options.onProgress?.({
+    phase: "starting",
+    message: `Created run ${runId}.`,
+    metadata: {
+      runId,
+      outputPath
+    }
+  });
 
+  await options.onProgress?.({
+    phase: "preflight",
+    message: `Running preflight for ${selections.length} agent selection(s).`,
+    metadata: {
+      count: selections.length
+    }
+  });
   const preflights = await preflightAdapters(selections, { probeAuth: options.probeAuth });
+  await options.onProgress?.({
+    phase: "preflight",
+    message: `Preflight finished. ${preflights.filter((value) => value.status === "ready").length}/${preflights.length} ready.`,
+    metadata: {
+      total: preflights.length,
+      ready: preflights.filter((value) => value.status === "ready").length
+    }
+  });
   const results = await mapWithConcurrency(
     preflights,
     agentConcurrency(options),
-    async (preflight) =>
-      await runAgent(repoPath, outputPath, workspaceRootPath, options.taskPath, preflight, {
+    async (preflight) => {
+      await options.onProgress?.({
+        phase: "agent-start",
+        agentId: preflight.agentId,
+        variantId: preflight.variantId,
+        displayLabel: preflight.displayLabel,
+        message: `Running ${preflight.displayLabel}.`,
+        metadata: {
+          status: preflight.status
+        }
+      });
+      const result = await runAgent(repoPath, outputPath, workspaceRootPath, options.taskPath, preflight, {
         updateSnapshots: options.updateSnapshots
-      })
+      });
+      await options.onProgress?.({
+        phase: "agent-finish",
+        agentId: result.agentId,
+        variantId: result.variantId,
+        displayLabel: result.displayLabel,
+        message: `${result.displayLabel} finished with status ${result.status}.`,
+        metadata: {
+          status: result.status,
+          durationMs: result.durationMs,
+          judgePasses: result.judgeResults.filter((value) => value.success).length,
+          judgeTotal: result.judgeResults.length
+        }
+      });
+      return result;
+    }
   );
+  await options.onProgress?.({
+    phase: "complete",
+    message: `Benchmark run finished for ${results.length} result(s).`,
+    metadata: {
+      total: results.length,
+      success: results.filter((value) => value.status === "success").length
+    }
+  });
 
   return {
     runId,

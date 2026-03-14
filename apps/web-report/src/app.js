@@ -50,6 +50,10 @@ const elements = {
   launcherProbeAuth: document.querySelector("#launcher-probe-auth"),
   launcherRun: document.querySelector("#launcher-run"),
   launcherStatus: document.querySelector("#launcher-status"),
+  launcherProgress: document.querySelector("#launcher-progress"),
+  launcherProgressTitle: document.querySelector("#launcher-progress-title"),
+  launcherCurrentAgent: document.querySelector("#launcher-current-agent"),
+  launcherLogList: document.querySelector("#launcher-log-list"),
   taskBrief: document.querySelector("#task-brief"),
   runInfo: document.querySelector("#run-info"),
   workflowList: document.querySelector("#workflow-list"),
@@ -209,6 +213,10 @@ const MESSAGES = {
       elapsed ? `${phase} · ${elapsed} elapsed` : phase,
     launcherStatusDone: (title) => `Benchmark finished. Current report: ${title}.`,
     launcherStatusError: (message) => `Run failed: ${message}`,
+    launcherProgressTitle: "Live Progress",
+    launcherCurrentAgentIdle: "Waiting to start.",
+    launcherCurrentAgentLabel: (agent) => `Current agent: ${agent}`,
+    launcherLogEmpty: "No progress entries yet.",
     launcherPhases: {
       idle: "Idle",
       starting: "Starting benchmark",
@@ -327,6 +335,10 @@ const MESSAGES = {
       elapsed ? `${phase} · 已运行 ${elapsed}` : phase,
     launcherStatusDone: (title) => `Benchmark 已完成。当前报告：${title}。`,
     launcherStatusError: (message) => `运行失败：${message}`,
+    launcherProgressTitle: "实时进度",
+    launcherCurrentAgentIdle: "等待开始。",
+    launcherCurrentAgentLabel: (agent) => `当前 agent：${agent}`,
+    launcherLogEmpty: "还没有进度日志。",
     launcherPhases: {
       idle: "空闲",
       starting: "正在启动",
@@ -688,6 +700,45 @@ function renderNextSteps() {
   elements.nextStepsContent.textContent = t("nextStepsLoaded", state.run, state.runs.length);
 }
 
+function renderLauncherProgress() {
+  const isVisible = state.runInProgress || (state.runStatus?.logs?.length ?? 0) > 0;
+  setHidden(elements.launcherProgress, !isVisible);
+
+  if (!isVisible) {
+    return;
+  }
+
+  elements.launcherProgressTitle.textContent = t("launcherProgressTitle");
+  const currentAgent = state.runStatus?.currentDisplayLabel || state.runStatus?.currentVariantId || state.runStatus?.currentAgentId;
+  elements.launcherCurrentAgent.textContent = currentAgent
+    ? t("launcherCurrentAgentLabel", currentAgent)
+    : t("launcherCurrentAgentIdle");
+
+  const logs = Array.isArray(state.runStatus?.logs) ? state.runStatus.logs : [];
+  if (logs.length === 0) {
+    elements.launcherLogList.innerHTML = `<div class="muted">${escapeHtml(t("launcherLogEmpty"))}</div>`;
+    return;
+  }
+
+  elements.launcherLogList.innerHTML = logs
+    .slice()
+    .reverse()
+    .map((entry) => {
+      const phase = t(`launcherPhases.${entry.phase ?? "starting"}`);
+      const actor = entry.displayLabel ? `${escapeHtml(entry.displayLabel)} · ` : "";
+      return `
+        <article class="launcher-log-entry">
+          <div class="launcher-log-head">
+            <span class="status-badge status-${escapeHtml(entry.phase ?? "starting")}">${escapeHtml(phase)}</span>
+            <span class="muted">${escapeHtml(new Date(entry.timestamp).toLocaleTimeString())}</span>
+          </div>
+          <p>${actor}${escapeHtml(entry.message)}</p>
+        </article>
+      `;
+    })
+    .join("");
+}
+
 function renderLauncher() {
   if (!state.serviceInfo) {
     setHidden(elements.launcherPanel, true);
@@ -879,6 +930,7 @@ function renderLauncher() {
   elements.launcherStatus.textContent = state.runInProgress
     ? currentRunPhaseLabel() || t("launcherStatusRunning")
     : state.notice ?? t("launcherStatusIdle");
+  renderLauncherProgress();
 }
 
 async function detectService() {

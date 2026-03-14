@@ -173,6 +173,39 @@ input {
   color: var(--muted);
 }
 
+.launcher-progress {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--paper-2);
+}
+
+.launcher-log-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.launcher-log-entry {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--paper);
+}
+
+.launcher-log-entry p {
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+
+.launcher-log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .agent-list {
   display: grid;
   gap: 10px;
@@ -257,6 +290,14 @@ input {
 .status-unverified {
   background: rgba(141, 103, 21, 0.12);
   color: var(--warning);
+}
+
+.status-starting,
+.status-preflight,
+.status-benchmark,
+.status-report {
+  background: rgba(159, 69, 37, 0.12);
+  color: var(--accent);
 }
 
 .status-missing {

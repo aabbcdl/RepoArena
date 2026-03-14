@@ -55,6 +55,15 @@ interface UiRunPayload {
 
 type UiRunPhase = "idle" | "starting" | "preflight" | "benchmark" | "report";
 
+interface UiRunLogEntry {
+  timestamp: string;
+  phase: UiRunPhase;
+  message: string;
+  agentId?: string;
+  variantId?: string;
+  displayLabel?: string;
+}
+
 interface UiRunStatus {
   state: "idle" | "running";
   phase: UiRunPhase;
@@ -62,6 +71,10 @@ interface UiRunStatus {
   repoPath?: string;
   taskPath?: string;
   outputPath?: string;
+  currentAgentId?: string;
+  currentVariantId?: string;
+  currentDisplayLabel?: string;
+  logs: UiRunLogEntry[];
   updatedAt: string;
 }
 
@@ -770,6 +783,7 @@ async function runUi(parsed: ParsedArgs): Promise<void> {
   let activeRunStatus: UiRunStatus = {
     state: "idle",
     phase: "idle",
+    logs: [],
     updatedAt: new Date().toISOString()
   };
 
@@ -785,7 +799,20 @@ async function runUi(parsed: ParsedArgs): Promise<void> {
     activeRunStatus = {
       state: "idle",
       phase: "idle",
+      logs: [],
       updatedAt: new Date().toISOString()
+    };
+  };
+
+  const appendRunLog = (entry: Omit<UiRunLogEntry, "timestamp">): void => {
+    const nextEntry: UiRunLogEntry = {
+      ...entry,
+      timestamp: new Date().toISOString()
+    };
+    activeRunStatus = {
+      ...activeRunStatus,
+      logs: [...activeRunStatus.logs, nextEntry].slice(-30),
+      updatedAt: nextEntry.timestamp
     };
   };
 
@@ -871,12 +898,10 @@ async function runUi(parsed: ParsedArgs): Promise<void> {
             taskPath: payload.taskPath,
             outputPath: payload.outputPath
           });
-          setRunStatus({ phase: "preflight" });
-          const progressTimer = setTimeout(() => {
-            if (activeRunStatus.state === "running" && activeRunStatus.phase === "preflight") {
-              setRunStatus({ phase: "benchmark" });
-            }
-          }, 1200);
+          appendRunLog({
+            phase: "starting",
+            message: `Starting benchmark for ${selections.length} selection(s).`
+          });
           const benchmark = await runBenchmark({
             repoPath: payload.repoPath,
             taskPath: payload.taskPath,
@@ -885,11 +910,54 @@ async function runUi(parsed: ParsedArgs): Promise<void> {
             outputPath: payload.outputPath,
             probeAuth: payload.probeAuth,
             updateSnapshots: payload.updateSnapshots,
-            maxConcurrency: payload.maxConcurrency
+            maxConcurrency: payload.maxConcurrency,
+            onProgress: (event) => {
+              const phase =
+                event.phase === "starting" || event.phase === "preflight"
+                  ? event.phase
+                  : event.phase === "report"
+                    ? "report"
+                    : "benchmark";
+              setRunStatus({
+                phase,
+                currentAgentId:
+                  event.phase === "agent-start" || event.phase === "agent-finish"
+                    ? event.agentId
+                    : activeRunStatus.currentAgentId,
+                currentVariantId:
+                  event.phase === "agent-start" || event.phase === "agent-finish"
+                    ? event.variantId
+                    : activeRunStatus.currentVariantId,
+                currentDisplayLabel:
+                  event.phase === "agent-start" || event.phase === "agent-finish"
+                    ? event.displayLabel
+                    : activeRunStatus.currentDisplayLabel
+              });
+              appendRunLog({
+                phase,
+                message: event.message,
+                agentId: event.agentId,
+                variantId: event.variantId,
+                displayLabel: event.displayLabel
+              });
+            }
           });
-          clearTimeout(progressTimer);
+          setRunStatus({
+            phase: "report",
+            currentAgentId: undefined,
+            currentVariantId: undefined,
+            currentDisplayLabel: undefined
+          });
           setRunStatus({ phase: "report" });
+          appendRunLog({
+            phase: "report",
+            message: "Writing report artifacts."
+          });
           const report = await writeReport(benchmark);
+          appendRunLog({
+            phase: "report",
+            message: "Report artifacts are ready."
+          });
           const run = JSON.parse(await fs.readFile(report.jsonPath, "utf8"));
           const markdown = await fs.readFile(report.markdownPath, "utf8");
           return {

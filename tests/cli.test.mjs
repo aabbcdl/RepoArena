@@ -512,6 +512,9 @@ test("repoarena ui exposes run progress while a benchmark is active", async () =
     assert.notEqual(status.phase, "idle");
     assert.equal(status.repoPath, repoPath);
     assert.equal(status.taskPath, taskPath);
+    assert.equal(Array.isArray(status.logs), true);
+    assert.ok(status.logs.length >= 1);
+    assert.match(status.logs[0].message, /Starting benchmark|Running preflight|Created run/);
 
     const response = await runPromise;
     assert.equal(response.status, 200);
